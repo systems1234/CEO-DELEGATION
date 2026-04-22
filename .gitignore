@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+gen-lang-client-*.json
+*service-account*.json

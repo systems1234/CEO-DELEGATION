@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ app_title }}</title>
+    <meta
+      name="description"
+      content="Mission control dashboard for CEO task delegation, live task status, and direct assignment."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/dashboard.css" />
+  </head>
+  <body
+    data-dashboard-url="{{ api_dashboard_url }}"
+    data-task-url="{{ api_task_url }}"
+  >
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">CEO Mission Control</p>
+          <h1>See the work, steer the team, assign in one place.</h1>
+          <p class="hero-text">
+            This dashboard mirrors the live task system behind WhatsApp. The CEO can
+            review status, spot overdue work, and assign new tasks without opening Sheets.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <button id="refresh-button" class="ghost-button" type="button">
+            Refresh Board
+          </button>
+          <div class="pulse-wrap" aria-live="polite">
+            <span class="pulse-dot"></span>
+            <span id="refresh-status">Live sync active</span>
+          </div>
+        </div>
+      </header>
+
+      <main id="main-content" class="dashboard-layout">
+        <section class="assign-panel" aria-labelledby="assign-panel-title">
+          <div class="panel-head">
+            <p class="panel-kicker">Command Deck</p>
+            <h2 id="assign-panel-title">Assign a task from the frontend</h2>
+          </div>
+          <form id="assign-form" class="assign-form">
+            <label class="field">
+              <span>Assign to</span>
+              <select id="assignee-select" name="assignee" required>
+                <option value="">Select a team member</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Task</span>
+              <textarea
+                id="task-input"
+                name="task"
+                rows="5"
+                maxlength="500"
+                placeholder="Example: Finalize the vendor deck and send the revised version before 6 PM."
+                required
+              ></textarea>
+            </label>
+
+            <label class="field">
+              <span>Due date</span>
+              <input id="due-date-input" name="due_date" type="date" />
+            </label>
+
+            <button class="submit-button" type="submit">Assign Task</button>
+            <p id="form-status" class="form-status" aria-live="polite"></p>
+          </form>
+
+          <section class="roster-card" aria-labelledby="roster-title">
+            <div class="panel-head compact">
+              <p class="panel-kicker">Roster</p>
+              <h3 id="roster-title">Active team members</h3>
+            </div>
+            <ul id="member-roster" class="member-roster"></ul>
+          </section>
+        </section>
+
+        <section class="board-panel" aria-labelledby="board-panel-title">
+          <div class="board-head">
+            <div>
+              <p class="panel-kicker">Operations View</p>
+              <h2 id="board-panel-title">Task board</h2>
+            </div>
+            <p id="snapshot-meta" class="snapshot-meta">Awaiting first sync...</p>
+          </div>
+
+          <section class="stats-grid" aria-label="Task summary">
+            <article class="stat-card stat-card-primary">
+              <span class="stat-label">Active</span>
+              <strong id="stat-active">0</strong>
+              <span class="stat-foot">Pending + postponed</span>
+            </article>
+            <article class="stat-card">
+              <span class="stat-label">Due Today</span>
+              <strong id="stat-due-today">0</strong>
+              <span class="stat-foot">Needs follow-through now</span>
+            </article>
+            <article class="stat-card">
+              <span class="stat-label">Overdue</span>
+              <strong id="stat-overdue">0</strong>
+              <span class="stat-foot">Past current due date</span>
+            </article>
+            <article class="stat-card">
+              <span class="stat-label">Completed</span>
+              <strong id="stat-completed">0</strong>
+              <span class="stat-foot">Closed successfully</span>
+            </article>
+            <article class="stat-card">
+              <span class="stat-label">Team</span>
+              <strong id="stat-team">0</strong>
+              <span class="stat-foot">Configured assignees</span>
+            </article>
+            <article class="stat-card stat-card-soft">
+              <span class="stat-label">Total Tasks</span>
+              <strong id="stat-total">0</strong>
+              <span class="stat-foot">Full board footprint</span>
+            </article>
+          </section>
+
+          <div class="toolbar">
+            <div class="filter-row" role="group" aria-label="Task filters">
+              <button class="filter-chip is-active" type="button" data-filter="all">All</button>
+              <button class="filter-chip" type="button" data-filter="Pending">Pending</button>
+              <button class="filter-chip" type="button" data-filter="Postponed">Postponed</button>
+              <button class="filter-chip" type="button" data-filter="Overdue">Overdue</button>
+              <button class="filter-chip" type="button" data-filter="Done">Done</button>
+            </div>
+          </div>
+
+          <div id="task-error" class="board-message board-message-error" hidden>
+            The board could not load. Check the API and refresh.
+          </div>
+          <div id="task-empty" class="board-message" hidden>
+            No tasks match the current filter.
+          </div>
+          <div id="task-grid" class="task-grid" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>
+
+    <template id="task-card-template">
+      <article class="task-card">
+        <div class="task-card-top">
+          <span class="status-pill"></span>
+          <span class="task-row-id"></span>
+        </div>
+        <h3 class="task-title"></h3>
+        <p class="task-meta assignee"></p>
+        <dl class="task-details">
+          <div>
+            <dt>Assigned</dt>
+            <dd class="assign-date"></dd>
+          </div>
+          <div>
+            <dt>Due</dt>
+            <dd class="due-date"></dd>
+          </div>
+          <div>
+            <dt>Current date</dt>
+            <dd class="effective-date"></dd>
+          </div>
+        </dl>
+        <p class="task-reason" hidden></p>
+      </article>
+    </template>
+
+    <script src="/static/dashboard.js" defer></script>
+  </body>
+</html>
+
