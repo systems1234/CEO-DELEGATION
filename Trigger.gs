@@ -82,14 +82,16 @@ function _markAndNotifyOverdueTasks() {
   const overdueTasks = [];
 
   for (let i = 1; i < data.length; i++) {
-    const row    = data[i];
-    const status = String(row[C.STATUS - 1]).trim();
-    const due    = _normaliseDateCell(row[C.DUE_DATE - 1]);
+    const row            = data[i];
+    const status         = String(row[C.STATUS - 1]).trim();
+    const due            = _normaliseDateCell(row[C.DUE_DATE - 1]);
+    const postponedDate  = _normaliseDateCell(row[C.NEW_DATE - 1]);
+    const effectiveDue   = _getEffectiveDueDate(status, due, postponedDate);
 
-    // Only flag tasks that are Pending, have a due date set, and due date is strictly before today
-    if (status !== CFG.STATUS.PENDING) continue;
-    if (!due) continue;
-    if (due >= today) continue;
+    // Flag active tasks whose current effective due date is strictly before today.
+    if (!_isActiveTaskStatus(status)) continue;
+    if (!effectiveDue) continue;
+    if (effectiveDue >= today) continue;
 
     // Mark overdue in master
     master.getRange(i + 1, C.STATUS).setValue(CFG.STATUS.OVERDUE);
@@ -116,7 +118,7 @@ function _markAndNotifyOverdueTasks() {
       assigneeName:   String(row[C.ASSIGNEE_NAME - 1]),
       assigneeNumber: String(row[C.ASSIGNEE_NUMBER - 1]),
       task:           String(row[C.TASK - 1]),
-      dueDate:        due,
+      dueDate:        effectiveDue,
       rowId:          String(row[C.ROW_ID - 1]),
     });
   }
@@ -154,6 +156,17 @@ function _markAndNotifyOverdueTasks() {
 
 function _todayIso() {
   return Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd");
+}
+
+function _isActiveTaskStatus(status) {
+  return status === CFG.STATUS.PENDING || status === CFG.STATUS.POSTPONED;
+}
+
+function _getEffectiveDueDate(status, dueDate, postponedDate) {
+  if (status === CFG.STATUS.POSTPONED && postponedDate) {
+    return postponedDate;
+  }
+  return dueDate;
 }
 
 function _formatDateForDisplay(isoDate) {

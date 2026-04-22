@@ -81,7 +81,7 @@ function createTask(parsed) {
 
   // ── Individual sheet ──────────────────────────────────────────────────────
   const indSheet = _getOrCreateSheet(ss, member.sheetName);
-  _ensureIndividualHeaders(indSheet, member.name);
+  _ensureIndividualHeaders(indSheet);
   indSheet.appendRow([
     parsed.task,            // COL 1 - task
     today,                  // COL 2 - assign date
@@ -270,7 +270,7 @@ function _ensureConfigSheet(ss) {
   }
 }
 
-function _ensureIndividualHeaders(sheet, memberName) {
+function _ensureIndividualHeaders(sheet) {
   if (sheet.getLastRow() === 0) {
     sheet.appendRow([
       "Task", "Assign Date", "Due Date",
@@ -279,7 +279,6 @@ function _ensureIndividualHeaders(sheet, memberName) {
     ]);
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, 10).setFontWeight("bold").setBackground("#F4B400").setFontColor("#FFFFFF");
-    sheet.setName(memberName);
   }
 }
 
