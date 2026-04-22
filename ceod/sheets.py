@@ -28,6 +28,13 @@ INDIVIDUAL_HEADERS = [
 STATE_HEADERS = ["Key", "Value"]
 CHATLOG_HEADERS = ["Timestamp", "Direction", "Number", "Name", "Message"]
 
+_BASE_SHEETS: list[tuple[str, list[str]]] = [
+  ("Master", MASTER_HEADERS),
+  ("Config", CONFIG_HEADERS),
+  ("RuntimeState", STATE_HEADERS),
+  ("ChatLog", CHATLOG_HEADERS),
+]
+
 
 class MasterCol(IntEnum):
   ASSIGNEE_NAME = 1
@@ -58,6 +65,8 @@ class IndividualCol(IntEnum):
 
 
 class GoogleSheetsRepository:
+  _ROW_ID_RE = re.compile(r"^T\d{13}[0-9A-F]{4}$")
+
   def __init__(self, settings: Settings) -> None:
     self._settings = settings
     self._logger = logging.getLogger(__name__)
@@ -65,18 +74,65 @@ class GoogleSheetsRepository:
     client = gspread.authorize(credentials)
     self._spreadsheet = client.open_by_key(settings.spreadsheet_id)
     self._sheet_cache: dict[str, gspread.Worksheet] = {}
-
-  def _warm_cache(self) -> None:
-    if not self._sheet_cache:
-      for ws in self._spreadsheet.worksheets():
-        self._sheet_cache[ws.title] = ws
+    self._base_sheets_ensured: bool = False
 
   def ensure_base_sheets(self) -> None:
-    self._warm_cache()
-    self._ensure_sheet("Master", MASTER_HEADERS)
-    self._ensure_sheet("Config", CONFIG_HEADERS)
-    self._ensure_sheet("RuntimeState", STATE_HEADERS)
-    self._ensure_sheet("ChatLog", CHATLOG_HEADERS)
+    if self._base_sheets_ensured:
+      return
+    self._base_sheets_ensured = True
+
+    # Single API call to get all existing worksheets — warm the full cache
+    existing: dict[str, gspread.Worksheet] = {
+      ws.title: ws for ws in self._spreadsheet.worksheets()
+    }
+    self._sheet_cache.update(existing)
+
+    for name, headers in _BASE_SHEETS:
+      if name not in self._sheet_cache:
+        sheet = self._spreadsheet.add_worksheet(
+          title=name, rows=1000, cols=max(len(headers), 12)
+        )
+        self._sheet_cache[name] = sheet
+      else:
+        sheet = self._sheet_cache[name]
+      self._ensure_headers(sheet, headers)
+
+  def _ensure_headers(self, sheet: gspread.Worksheet, headers: list[str]) -> None:
+    values = sheet.get_all_values()
+    has_correct_header = values and values[0] == headers
+    has_duplicate_headers = has_correct_header and any(
+      row == headers for row in values[1:min(6, len(values))]
+    )
+
+    if not values:
+      sheet.update([headers], "A1", value_input_option="RAW")
+      sheet.freeze(rows=1)
+    elif has_duplicate_headers:
+      # Multiple header rows = repeated insert_row calls = corrupted state.
+      # Preserve only valid data rows, then rebuild the sheet cleanly.
+      valid_rows = [row for row in values if self._is_valid_master_row(row)]
+      sheet.clear()
+      all_rows = [headers] + [row[:len(headers)] for row in valid_rows]
+      sheet.update(all_rows, "A1", value_input_option="RAW")
+      sheet.freeze(rows=1)
+      self._logger.warning(
+        "Rebuilt sheet '%s': removed duplicate headers, kept %d data rows",
+        sheet.title,
+        len(valid_rows),
+      )
+    elif not has_correct_header:
+      # First row exists but is not the expected header.
+      # Preserve valid data rows, rebuild cleanly.
+      valid_rows = [row for row in values if self._is_valid_master_row(row)]
+      sheet.clear()
+      all_rows = [headers] + [row[:len(headers)] for row in valid_rows]
+      sheet.update(all_rows, "A1", value_input_option="RAW")
+      sheet.freeze(rows=1)
+      self._logger.info(
+        "Rebuilt sheet '%s' with correct headers, kept %d data rows",
+        sheet.title,
+        len(valid_rows),
+      )
 
   def get_team_members(self) -> list[TeamMember]:
     self.ensure_base_sheets()
@@ -106,53 +162,77 @@ class GoogleSheetsRepository:
 
     row_id = generate_row_id()
     master = self._get_sheet("Master")
-    master.append_row(
+    master_rows = master.get_all_values()
+    next_master_row = len(master_rows) + 1
+    master.update(
       [
-        member.name,
-        member.number,
-        parsed.task,
-        today_iso,
-        parsed.due_date or "",
-        "",
-        "",
-        "",
-        TaskStatus.PENDING.value,
-        "",
-        "",
-        row_id,
+        [
+          member.name,
+          member.number,
+          parsed.task,
+          today_iso,
+          parsed.due_date or "",
+          "",
+          "",
+          "",
+          TaskStatus.PENDING.value,
+          "",
+          "",
+          row_id,
+        ]
       ],
+      f"A{next_master_row}",
       value_input_option="RAW",
     )
 
     individual = self._ensure_sheet(member.sheet_name, INDIVIDUAL_HEADERS)
-    individual.append_row(
+    individual_rows = individual.get_all_values()
+    next_individual_row = len(individual_rows) + 1
+    individual.update(
       [
-        parsed.task,
-        today_iso,
-        parsed.due_date or "",
-        "",
-        "",
-        "",
-        TaskStatus.PENDING.value,
-        "",
-        "",
-        row_id,
+        [
+          parsed.task,
+          today_iso,
+          parsed.due_date or "",
+          "",
+          "",
+          "",
+          TaskStatus.PENDING.value,
+          "",
+          "",
+          row_id,
+        ]
       ],
+      f"A{next_individual_row}",
       value_input_option="RAW",
     )
     return row_id
 
   def get_task_by_row_id(self, row_id: str) -> TaskRecord | None:
     rows = self._get_sheet("Master").get_all_values()
-    for row in rows[1:]:
+    for row in rows:
       if self._is_valid_master_row(row) and row[MasterCol.ROW_ID - 1] == row_id:
         return self._task_from_master_row(row)
+    self._logger.warning(
+      "get_task_by_row_id: %s not found. Master has %d rows, %d valid data rows.",
+      row_id,
+      len(rows),
+      sum(1 for r in rows if self._is_valid_master_row(r)),
+    )
+    for i, row in enumerate(rows):
+      self._logger.warning(
+        "  row[%d] len=%d col12=%r valid=%s",
+        i,
+        len(row),
+        row[MasterCol.ROW_ID - 1] if len(row) >= MasterCol.ROW_ID else "<short>",
+        self._is_valid_master_row(row),
+      )
     return None
 
   def get_latest_pending_task_for_number(self, number: str) -> TaskRecord | None:
     clean_number = normalise_whatsapp_number(number)
     rows = self._get_sheet("Master").get_all_values()
-    for row in reversed(rows[1:]):
+    for row in reversed(rows):
       if not self._is_valid_master_row(row):
         continue
       status = self._task_status(row[MasterCol.STATUS - 1])
@@ -163,7 +243,7 @@ class GoogleSheetsRepository:
   def list_tasks(self) -> list[TaskRecord]:
     rows = self._get_sheet("Master").get_all_values()
     tasks: list[TaskRecord] = []
-    for row in rows[1:]:
+    for row in rows:
       if not self._is_valid_master_row(row):
         continue
       tasks.append(self._task_from_master_row(row))
@@ -200,7 +280,7 @@ class GoogleSheetsRepository:
   def get_tasks_due_today(self, today_iso: str) -> list[TaskRecord]:
     due_tasks: list[TaskRecord] = []
     rows = self._get_sheet("Master").get_all_values()
-    for row in rows[1:]:
+    for row in rows:
       if not self._is_valid_master_row(row):
         continue
       task = self._task_from_master_row(row)
@@ -215,7 +295,7 @@ class GoogleSheetsRepository:
   def mark_overdue_tasks(self, today_iso: str) -> list[TaskRecord]:
     overdue_tasks: list[TaskRecord] = []
     rows = self._get_sheet("Master").get_all_values()
-    for row in rows[1:]:
+    for row in rows:
       if not self._is_valid_master_row(row):
         continue
       task = self._task_from_master_row(row)
@@ -252,7 +332,7 @@ class GoogleSheetsRepository:
       if len(row) >= 1 and row[0] == key:
         sheet.update_cell(index, 2, row_id)
         return
-    sheet.append_row([key, row_id], value_input_option="RAW")
+    sheet.update([[key, row_id]], f"A{len(rows) + 1}", value_input_option="RAW")
 
   def get_pending_postpone(self, number: str) -> str | None:
     key = self._pending_postpone_key(number)
@@ -279,7 +359,7 @@ class GoogleSheetsRepository:
       if len(row) >= 1 and row[0] == key:
         sheet.update_cell(index, 2, row_id)
         return
-    sheet.append_row([key, row_id], value_input_option="RAW")
+    sheet.update([[key, row_id]], f"A{len(rows) + 1}", value_input_option="RAW")
 
   def get_pending_commitment(self, number: str) -> str | None:
     key = self._pending_commitment_key(number)
@@ -302,8 +382,10 @@ class GoogleSheetsRepository:
     master = self._get_sheet("Master")
     rows = master.get_all_values()
     assignee_name: str | None = None
-    for index, row in enumerate(rows[1:], start=2):
-      if len(row) >= MasterCol.ROW_ID and row[MasterCol.ROW_ID - 1] == row_id:
+    for index, row in enumerate(rows, start=1):
+      if not self._is_valid_master_row(row):
+        continue
+      if row[MasterCol.ROW_ID - 1] == row_id:
         assignee_name = row[MasterCol.ASSIGNEE_NAME - 1]
         master.update_cell(index, int(MasterCol.DUE_DATE), due_date)
         break
@@ -314,20 +396,31 @@ class GoogleSheetsRepository:
       return
     individual = self._ensure_sheet(member.sheet_name, INDIVIDUAL_HEADERS)
     rows = individual.get_all_values()
-    for index, row in enumerate(rows[1:], start=2):
+    for index, row in enumerate(rows, start=1):
       if len(row) >= IndividualCol.ROW_ID and row[IndividualCol.ROW_ID - 1] == row_id:
         individual.update_cell(index, int(IndividualCol.DUE_DATE), due_date)
         return
 
   def log_message(self, timestamp: str, direction: str, number: str, name: str, text: str) -> None:
-    sheet = self._get_sheet("ChatLog")
-    sheet.append_row([timestamp, direction, number, name, text[:50000]], value_input_option="RAW")
+    try:
+      sheet = self._ensure_sheet("ChatLog", CHATLOG_HEADERS)
+      rows = sheet.get_all_values()
+      sheet.update(
+        [[timestamp, direction, number, name, text[:50000]]],
+        f"A{len(rows) + 1}",
+        value_input_option="RAW",
+      )
+    except Exception as exc:
+      self._logger.warning("ChatLog write failed: %s", exc)
 
   def get_chat_log(self) -> list[dict[str, str]]:
-    rows = self._get_sheet("ChatLog").get_all_values()
+    try:
+      rows = self._ensure_sheet("ChatLog", CHATLOG_HEADERS).get_all_values()
+    except Exception:
+      return []
     entries: list[dict[str, str]] = []
-    for row in rows[1:]:
-      if len(row) < 5 or not row[0]:
+    for row in rows:
+      if len(row) < 5 or not row[0] or row[0] == "Timestamp":
         continue
       entries.append({
         "timestamp": row[0],
@@ -346,16 +439,22 @@ class GoogleSheetsRepository:
     profiles = build_random_seed_profiles(count, existing_names, existing_numbers, existing_sheet_names)
 
     config = self._get_sheet("Config")
-    # Fetch worksheet list once to avoid a metadata API call per profile
+    config_rows = config.get_all_values()
     known_titles: set[str] = {ws.title for ws in self._spreadsheet.worksheets()}
     for profile in profiles:
-      config.append_row([profile.name, profile.number, profile.sheet_name], value_input_option="RAW")
+      config.update(
+        [[profile.name, profile.number, profile.sheet_name]],
+        f"A{len(config_rows) + 1}",
+        value_input_option="RAW",
+      )
+      config_rows.append([profile.name, profile.number, profile.sheet_name])
       if profile.sheet_name not in known_titles:
         sheet = self._spreadsheet.add_worksheet(
           title=profile.sheet_name, rows=1000, cols=max(len(INDIVIDUAL_HEADERS), 12)
         )
-        sheet.append_row(INDIVIDUAL_HEADERS, value_input_option="RAW")
+        sheet.update([INDIVIDUAL_HEADERS], "A1", value_input_option="RAW")
         sheet.freeze(rows=1)
+        self._sheet_cache[profile.sheet_name] = sheet
         known_titles.add(profile.sheet_name)
     return profiles
 
@@ -395,7 +494,7 @@ class GoogleSheetsRepository:
     self._sheet_cache[name] = sheet
     values = sheet.get_all_values()
     if not values:
-      sheet.append_row(headers, value_input_option="RAW")
+      sheet.update([headers], "A1", value_input_option="RAW")
       sheet.freeze(rows=1)
     return sheet
 
@@ -408,8 +507,10 @@ class GoogleSheetsRepository:
     master = self._get_sheet("Master")
     rows = master.get_all_values()
     assignee_name: str | None = None
-    for index, row in enumerate(rows[1:], start=2):
-      if len(row) >= MasterCol.ROW_ID and row[MasterCol.ROW_ID - 1] == row_id:
+    for index, row in enumerate(rows, start=1):
+      if not self._is_valid_master_row(row):
+        continue
+      if row[MasterCol.ROW_ID - 1] == row_id:
         assignee_name = row[MasterCol.ASSIGNEE_NAME - 1]
         for column, value in master_updates.items():
           master.update_cell(index, int(column), value)
@@ -422,7 +523,7 @@ class GoogleSheetsRepository:
       raise NotFoundError(f'Assignee "{assignee_name}" not found in Config')
     individual = self._ensure_sheet(member.sheet_name, INDIVIDUAL_HEADERS)
     rows = individual.get_all_values()
-    for index, row in enumerate(rows[1:], start=2):
+    for index, row in enumerate(rows, start=1):
       if len(row) >= IndividualCol.ROW_ID and row[IndividualCol.ROW_ID - 1] == row_id:
         for column, value in individual_updates.items():
           individual.update_cell(index, int(column), value)
@@ -442,8 +543,6 @@ class GoogleSheetsRepository:
       postpone_reason=row[MasterCol.POSTPONE_REASON - 1] or None,
       completion_date=row[MasterCol.COMPLETION_DATE - 1] or None,
     )
-
-  _ROW_ID_RE = re.compile(r"^T\d{13}[0-9A-F]{4}$")
 
   def _is_valid_master_row(self, row: list[str]) -> bool:
     if len(row) < MasterCol.ROW_ID:

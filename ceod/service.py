@@ -119,10 +119,17 @@ class TaskDelegationService:
       task=cleaned_task,
       due_date=cleaned_due_date or None,
     )
-    row_id = self._repository.create_task(parsed, today_iso(self._timezone_name))
-    created_task = self._repository.get_task_by_row_id(row_id)
-    if created_task is None:
-      raise RuntimeError(f"Created task {row_id} could not be reloaded")
+    task_date = today_iso(self._timezone_name)
+    row_id = self._repository.create_task(parsed, task_date)
+    created_task = TaskRecord(
+      row_id=row_id,
+      assignee_name=member.name,
+      assignee_number=member.number,
+      task=parsed.task,
+      status=TaskStatus.PENDING,
+      assign_date=task_date,
+      due_date=parsed.due_date,
+    )
 
     if notify_ceo:
       due_text = f"Due: {format_date_for_display(parsed.due_date)}" if parsed.due_date else "No due date set"
