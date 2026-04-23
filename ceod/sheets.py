@@ -432,6 +432,29 @@ class GoogleSheetsRepository:
       })
     return entries
 
+  def add_team_member(self, name: str, number: str, sheet_name: str) -> TeamMember:
+    self.ensure_base_sheets()
+    clean_name = name.strip()
+    clean_number = normalise_whatsapp_number(number)
+    clean_sheet = sheet_name.strip() or clean_name
+
+    for member in self.get_team_members():
+      if member.name.lower() == clean_name.lower():
+        raise ValueError(f'A member named "{clean_name}" already exists')
+      if member.number == clean_number:
+        raise ValueError(f'Number {clean_number} is already assigned to "{member.name}"')
+
+    config = self._get_sheet("Config")
+    config_rows = config.get_all_values()
+    config.update(
+      [[clean_name, clean_number, clean_sheet]],
+      f"A{len(config_rows) + 1}",
+      value_input_option="RAW",
+    )
+    self._ensure_sheet(clean_sheet, INDIVIDUAL_HEADERS)
+    self._logger.info("Added team member name=%s number=%s sheet=%s", clean_name, clean_number, clean_sheet)
+    return TeamMember(name=clean_name, number=clean_number, sheet_name=clean_sheet)
+
   def seed_random_test_profiles(self, count: int) -> list[SeedProfile]:
     members = self.get_team_members()
     existing_names = {member.name.lower() for member in members}

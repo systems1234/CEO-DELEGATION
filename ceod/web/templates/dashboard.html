@@ -81,6 +81,23 @@
               <h3 id="roster-title">Active members</h3>
             </div>
             <ul id="member-roster" class="member-roster"></ul>
+            <form id="add-member-form" class="add-member-form" autocomplete="off">
+              <p class="panel-kicker add-member-kicker">Add member</p>
+              <label class="field">
+                <span>Name</span>
+                <input id="member-name-input" name="name" type="text" placeholder="e.g. Priya" required />
+              </label>
+              <label class="field">
+                <span>WhatsApp number</span>
+                <input id="member-number-input" name="number" type="tel" placeholder="919876543210" required />
+              </label>
+              <label class="field">
+                <span>Sheet name <small>(optional — defaults to name)</small></span>
+                <input id="member-sheet-input" name="sheet_name" type="text" placeholder="Priya" />
+              </label>
+              <button class="submit-button" type="submit">Add Member</button>
+              <p id="add-member-status" class="form-status" aria-live="polite"></p>
+            </form>
           </section>
         </section>
 

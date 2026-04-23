@@ -460,6 +460,12 @@ class GreenAPIWhatsAppGateway(_InboundMediaAnalysisMixin):
       message_type, chat_id, sender, id_message,
     )
 
+    is_group = chat_id.endswith("@g.us")
+    allowed_group = self._settings.green_api_allowed_group_id
+    if is_group and allowed_group and chat_id != allowed_group:
+      self._logger.info("GREEN_API ignoring group chatId=%s (not the target group)", chat_id)
+      return None
+
     text = ""
     if message_type == "textMessage":
       text = str(message_data.get("textMessageData", {}).get("textMessage", "")).strip()

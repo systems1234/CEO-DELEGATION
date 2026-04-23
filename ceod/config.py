@@ -35,6 +35,7 @@ class Settings(BaseSettings):
   green_api_url: str | None = Field(default=None, alias="GREEN_API_URL")
   green_api_instance_id: str | None = Field(default=None, alias="GREEN_API_INSTANCE_ID")
   green_api_token: str | None = Field(default=None, alias="GREEN_API_TOKEN")
+  green_api_allowed_group_id: str | None = Field(default=None, alias="GREEN_API_ALLOWED_GROUP_ID")
 
   spreadsheet_id: str = Field(alias="SPREADSHEET_ID")
   google_service_account_json: str | None = Field(default=None, alias="GOOGLE_SERVICE_ACCOUNT_JSON")

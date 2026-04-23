@@ -1633,3 +1633,14 @@ a {
     width: 100%;
   }
 }
+
+.add-member-kicker {
+  margin-top: 1.25rem;
+}
+
+.add-member-form {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+

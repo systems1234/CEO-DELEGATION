@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 WEB_ROOT = Path(__file__).resolve().parent / "web"
 TEMPLATES = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
-PROTECTED_DASHBOARD_PATHS = frozenset({"/", "/chat", "/api/dashboard", "/api/tasks", "/api/chats", "/api/send", "/api/send-media"})
+PROTECTED_DASHBOARD_PATHS = frozenset({"/", "/chat", "/api/dashboard", "/api/tasks", "/api/chats", "/api/send", "/api/send-media", "/api/members"})
 AUTH_CHALLENGE_HEADER = 'Basic realm="CEO Mission Control", charset="UTF-8"'
 
 
@@ -43,6 +43,12 @@ class TaskCreatePayload(BaseModel):
 class SendTextPayload(BaseModel):
   to: str = Field(min_length=1)
   message: str = Field(min_length=1)
+
+
+class MemberCreatePayload(BaseModel):
+  name: str = Field(min_length=1)
+  number: str = Field(min_length=1)
+  sheet_name: str = ""
 
 
 def create_app(settings: Settings | None = None, container: "AppContainer" | None = None) -> FastAPI:
@@ -127,6 +133,26 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
       {
         "task": _serialise_task(task),
         "stats": _serialise_snapshot(snapshot)["stats"],
+      },
+      status_code=201,
+    )
+
+  @app.post("/api/members", status_code=201)
+  def add_member(payload: MemberCreatePayload) -> JSONResponse:
+    try:
+      member = app.state.container.service.add_team_member(
+        name=payload.name,
+        number=payload.number,
+        sheet_name=payload.sheet_name,
+      )
+    except ValueError as exc:
+      raise HTTPException(status_code=400, detail=str(exc)) from exc
+    snapshot = app.state.container.service.get_dashboard_snapshot()
+    return JSONResponse(
+      {
+        "member": asdict(member),
+        "stats": _serialise_snapshot(snapshot)["stats"],
+        "members": [asdict(m) for m in snapshot.members],
       },
       status_code=201,
     )

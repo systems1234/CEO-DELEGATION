@@ -40,6 +40,7 @@ class TaskRepositoryProtocol(Protocol):
   def log_message(self, timestamp: str, direction: str, number: str, name: str, text: str) -> None: ...
   def get_chat_log(self) -> list[dict[str, str]]: ...
   def seed_random_test_profiles(self, count: int) -> list[SeedProfile]: ...
+  def add_team_member(self, name: str, number: str, sheet_name: str) -> TeamMember: ...
 
 
 class TaskDelegationService:
@@ -98,6 +99,15 @@ class TaskDelegationService:
 
   def seed_random_test_profiles(self, count: int = 10) -> list[SeedProfile]:
     return self._repository.seed_random_test_profiles(count)
+
+  def add_team_member(self, *, name: str, number: str, sheet_name: str = "") -> TeamMember:
+    clean_name = name.strip()
+    clean_number = number.strip()
+    if not clean_name:
+      raise ValueError("Name is required")
+    if not clean_number:
+      raise ValueError("WhatsApp number is required")
+    return self._repository.add_team_member(clean_name, clean_number, sheet_name.strip())
 
   def send_text_message(self, *, to_number: str, body: str) -> None:
     cleaned_to_number = to_number.strip()

@@ -286,8 +286,44 @@ function bindFilters() {
   });
 }
 
+const addMemberForm = document.getElementById("add-member-form");
+const addMemberStatus = document.getElementById("add-member-status");
+
+function setAddMemberStatus(message, tone = "") {
+  addMemberStatus.textContent = message;
+  addMemberStatus.className = "form-status";
+  if (tone) addMemberStatus.classList.add(`is-${tone}`);
+}
+
+async function submitAddMember(event) {
+  event.preventDefault();
+  setAddMemberStatus("Adding member...");
+  const payload = {
+    name: document.getElementById("member-name-input").value.trim(),
+    number: document.getElementById("member-number-input").value.trim(),
+    sheet_name: document.getElementById("member-sheet-input").value.trim(),
+  };
+  try {
+    const response = await fetch("/api/members", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = response.headers.get("content-type")?.includes("application/json")
+      ? await response.json()
+      : { detail: await response.text() };
+    if (!response.ok) throw new Error(data.detail || "Failed to add member");
+    addMemberForm.reset();
+    setAddMemberStatus(`${data.member.name} added successfully.`, "success");
+    await fetchDashboard();
+  } catch (error) {
+    setAddMemberStatus(error.message || "Failed to add member.", "error");
+  }
+}
+
 refreshButton.addEventListener("click", fetchDashboard);
 assignForm.addEventListener("submit", submitTask);
+addMemberForm.addEventListener("submit", submitAddMember);
 bindFilters();
 fetchDashboard();
 window.setInterval(fetchDashboard, 30000);
