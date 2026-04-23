@@ -75,6 +75,7 @@ class GoogleSheetsRepository:
     client = gspread.authorize(credentials)
     self._spreadsheet = self._open_with_retry(client, settings.spreadsheet_id)
     self._sheet_cache: dict[str, gspread.Worksheet] = {}
+    self._headers_verified: set[str] = set()
     self._base_sheets_ensured: bool = False
 
   def _open_with_retry(self, client: gspread.Client, spreadsheet_id: str) -> gspread.Spreadsheet:
@@ -509,17 +510,20 @@ class GoogleSheetsRepository:
       raise NotFoundError(f'Worksheet "{name}" not found') from exc
 
   def _ensure_sheet(self, name: str, headers: list[str]) -> gspread.Worksheet:
-    if name in self._sheet_cache:
-      return self._sheet_cache[name]
-    try:
-      sheet = self._spreadsheet.worksheet(name)
-    except gspread.WorksheetNotFound:
-      sheet = self._spreadsheet.add_worksheet(title=name, rows=1000, cols=max(len(headers), 12))
-    self._sheet_cache[name] = sheet
-    values = sheet.get_all_values()
-    if not values:
-      sheet.update([headers], "A1", value_input_option="RAW")
-      sheet.freeze(rows=1)
+    if name not in self._sheet_cache:
+      try:
+        sheet = self._spreadsheet.worksheet(name)
+      except gspread.WorksheetNotFound:
+        sheet = self._spreadsheet.add_worksheet(title=name, rows=1000, cols=max(len(headers), 12))
+      self._sheet_cache[name] = sheet
+    sheet = self._sheet_cache[name]
+    if name not in self._headers_verified:
+      self._headers_verified.add(name)
+      values = sheet.get_all_values()
+      if not values:
+        sheet.update([headers], "A1", value_input_option="RAW")
+        sheet.freeze(rows=1)
+        self._logger.info("Wrote headers to sheet '%s'", name)
     return sheet
 
   def _update_task_fields(
