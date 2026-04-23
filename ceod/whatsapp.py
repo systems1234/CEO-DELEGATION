@@ -16,10 +16,16 @@ from ceod.utils import normalise_whatsapp_number
 
 
 _AUDIO_TRANSCRIPTION_URL = "https://api.openai.com/v1/audio/transcriptions"
-_IMAGE_ANALYSIS_PROMPT = (
-  "Read this WhatsApp image carefully. Extract the useful plain-text content and any clear task-style "
-  "instructions visible in the image. If there is a caption, incorporate it naturally. Preserve names, "
-  "dates, deadlines, and action items. Return only plain text. If there is no useful readable content, "
+_IMAGE_ANALYSIS_PROMPT_WITH_CAPTION = (
+  "A WhatsApp image was sent with the caption: \"{caption}\"\n\n"
+  "The caption is the primary instruction. Look at the image and extract only content that is "
+  "directly relevant to the caption's intent — names, dates, deadlines, or action items visible "
+  "in the image. Combine the caption and any relevant image details into a single plain-text "
+  "message a task management bot can parse. If the image adds nothing useful, return just the caption."
+)
+_IMAGE_ANALYSIS_PROMPT_NO_CAPTION = (
+  "Read this WhatsApp image. Extract any task-style instructions, names, dates, deadlines, or "
+  "action items visible in the image. Return only plain text. If there is no actionable content, "
   "return an empty string."
 )
 _VIDEO_FRAME_LIMIT = 4
@@ -42,6 +48,14 @@ _VIDEO_EXTENSION_BY_MIME_TYPE = {
   "video/webm": "webm",
   "video/x-msvideo": "avi",
 }
+
+
+def _clean_media_caption(caption: str) -> str:
+  """Strip Green API forwarded-message ID prefix (bare alphanumeric token on its own line)."""
+  import re
+  lines = caption.strip().splitlines()
+  cleaned = [ln for ln in lines if not re.fullmatch(r"[A-Za-z0-9]{10,}", ln.strip())]
+  return "\n".join(cleaned).strip()
 
 
 class _InboundMediaAnalysisMixin:
@@ -72,16 +86,20 @@ class _InboundMediaAnalysisMixin:
       return ""
 
   def _extract_image_text(self, image_bytes: bytes, *, mime_type: str, caption: str = "") -> str:
-    if not image_bytes and not caption.strip():
+    cleaned_caption = _clean_media_caption(caption)
+    if not image_bytes and not cleaned_caption:
       return ""
 
+    if not image_bytes:
+      return cleaned_caption
+
     cleaned_mime_type = (mime_type or "image/jpeg").split(";", 1)[0].strip().lower() or "image/jpeg"
-    content: list[dict[str, object]] = [
-      {
-        "type": "text",
-        "text": _IMAGE_ANALYSIS_PROMPT + (f"\n\nCaption: {caption.strip()}" if caption.strip() else ""),
-      }
-    ]
+    if cleaned_caption:
+      prompt_text = _IMAGE_ANALYSIS_PROMPT_WITH_CAPTION.format(caption=cleaned_caption)
+    else:
+      prompt_text = _IMAGE_ANALYSIS_PROMPT_NO_CAPTION
+
+    content: list[dict[str, object]] = [{"type": "text", "text": prompt_text}]
     if image_bytes:
       encoded_image = base64.b64encode(image_bytes).decode("ascii")
       content.append(
@@ -510,7 +528,7 @@ class GreenAPIWhatsAppGateway(_InboundMediaAnalysisMixin):
       nested = message_data.get(key)
       if not isinstance(nested, Mapping):
         continue
-      caption = str(nested.get("caption", "")).strip()
+      caption = _clean_media_caption(str(nested.get("caption", "")))
       if caption:
         return caption
     return ""
