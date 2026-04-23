@@ -100,11 +100,17 @@ class GreenAPIWhatsAppGateway:
 
     message_data = payload.get("messageData", {})
     message_type = str(message_data.get("typeMessage", ""))
+    sender_data = payload.get("senderData", {})
     text = ""
+
     if message_type == "textMessage":
       text = str(message_data.get("textMessageData", {}).get("textMessage", "")).strip()
     elif message_type in {"quotedMessage", "extendedTextMessage"}:
       text = str(message_data.get("extendedTextMessageData", {}).get("text", "")).strip()
+    elif message_type in {"pttMessage", "audioMessage"}:
+      id_message = str(payload.get("idMessage", ""))
+      chat_id = str(sender_data.get("chatId") or "")
+      text = self._transcribe_voice_note(chat_id, id_message)
     else:
       self._logger.info("Ignoring Green API message type=%s", message_type)
       return None
@@ -112,9 +118,41 @@ class GreenAPIWhatsAppGateway:
     if not text:
       return None
 
-    sender_data = payload.get("senderData", {})
     raw_sender = str(sender_data.get("sender") or sender_data.get("chatId") or "")
     return IncomingMessage(from_number=normalise_whatsapp_number(raw_sender), text=text)
+
+  def _transcribe_voice_note(self, chat_id: str, id_message: str) -> str:
+    try:
+      download_url_resp = self._client.post(
+        (
+          f"{self._settings.green_api_url.rstrip('/')}/"
+          f"waInstance{self._settings.green_api_instance_id}/"
+          f"downloadFile/{self._settings.green_api_token}"
+        ),
+        json={"chatId": chat_id, "idMessage": id_message},
+      )
+      download_url_resp.raise_for_status()
+      download_url = str(download_url_resp.json().get("downloadUrl", ""))
+      if not download_url:
+        self._logger.warning("Voice note: no downloadUrl returned by Green API")
+        return ""
+
+      audio_resp = self._client.get(download_url)
+      audio_resp.raise_for_status()
+
+      whisper_resp = self._client.post(
+        "https://api.openai.com/v1/audio/transcriptions",
+        headers={"Authorization": f"Bearer {self._settings.openai_api_key}"},
+        files={"file": ("voice.ogg", audio_resp.content, "audio/ogg")},
+        data={"model": "whisper-1"},
+      )
+      whisper_resp.raise_for_status()
+      transcript = str(whisper_resp.json().get("text", "")).strip()
+      self._logger.info("Voice note transcribed len=%d chars", len(transcript))
+      return transcript
+    except Exception as exc:
+      self._logger.warning("Voice note transcription failed: %s", exc)
+      return ""
 
   def send_text(self, to_number: str, body: str) -> str:
     chat_id = f"{normalise_whatsapp_number(to_number)}@c.us"
