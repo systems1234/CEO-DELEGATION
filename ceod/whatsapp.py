@@ -140,14 +140,18 @@ class _InboundMediaAnalysisMixin:
       return caption.strip()
 
   def _extract_video_text(self, video_bytes: bytes, *, mime_type: str, caption: str = "") -> str:
-    if not video_bytes and not caption.strip():
+    cleaned_caption = _clean_media_caption(caption)
+    if not video_bytes and not cleaned_caption:
       return ""
+
+    if not video_bytes:
+      return cleaned_caption
 
     try:
       import imageio_ffmpeg
     except ImportError:
       self._logger.warning("Video analysis unavailable: imageio-ffmpeg is not installed")
-      return caption.strip()
+      return cleaned_caption
 
     cleaned_mime_type = (mime_type or "video/mp4").split(";", 1)[0].strip().lower() or "video/mp4"
     video_extension = _VIDEO_EXTENSION_BY_MIME_TYPE.get(cleaned_mime_type, "mp4")
@@ -163,22 +167,21 @@ class _InboundMediaAnalysisMixin:
       self._extract_video_audio_track(ffmpeg_exe, video_path, audio_path)
       self._extract_video_frames(ffmpeg_exe, video_path, frame_pattern)
 
-      parts: list[str] = []
-      cleaned_caption = caption.strip()
-      if cleaned_caption:
-        parts.append(f"Caption: {cleaned_caption}")
+      context_parts: list[str] = []
 
       audio_text = ""
       if audio_path.exists() and audio_path.stat().st_size > 0:
         audio_text = self._transcribe_audio_bytes(audio_path.read_bytes(), mime_type="audio/wav")
       if audio_text:
-        parts.append(f"Audio transcript: {audio_text}")
+        context_parts.append(f"Audio: {audio_text}")
 
-      frame_texts = self._extract_video_frame_texts(temp_path)
+      frame_texts = self._extract_video_frame_texts(temp_path, caption=cleaned_caption)
       if frame_texts:
-        parts.extend(f"Frame {index}: {frame_text}" for index, frame_text in enumerate(frame_texts, start=1))
+        context_parts.extend(f"Frame {i}: {t}" for i, t in enumerate(frame_texts, start=1))
 
-      return "\n\n".join(parts).strip()
+      if cleaned_caption and context_parts:
+        return cleaned_caption + "\n\n" + "\n\n".join(context_parts)
+      return cleaned_caption or "\n\n".join(context_parts)
 
   def _extract_video_audio_track(self, ffmpeg_exe: str, video_path: Path, audio_path: Path) -> None:
     command = [
@@ -227,11 +230,11 @@ class _InboundMediaAnalysisMixin:
       tail = stderr[-1] if stderr else "unknown ffmpeg error"
       self._logger.warning("%s failed: %s", operation, tail)
 
-  def _extract_video_frame_texts(self, temp_path: Path) -> list[str]:
+  def _extract_video_frame_texts(self, temp_path: Path, caption: str = "") -> list[str]:
     frame_texts: list[str] = []
     for frame_path in sorted(temp_path.glob("frame-*.jpg"))[:_VIDEO_FRAME_LIMIT]:
       try:
-        frame_text = self._extract_image_text(frame_path.read_bytes(), mime_type="image/jpeg")
+        frame_text = self._extract_image_text(frame_path.read_bytes(), mime_type="image/jpeg", caption=caption)
       except Exception as exc:
         self._logger.warning("Video frame analysis failed for %s: %s", frame_path.name, exc)
         continue
