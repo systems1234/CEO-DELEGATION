@@ -172,13 +172,16 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
   @app.post("/webhook")
   async def webhook_receive(request: Request) -> Response:
     LOGGER.info("WEBHOOK hit from %s", request.client.host if request.client else "unknown")
+    raw_body = await request.body()
+    LOGGER.info("WEBHOOK raw body: %s", raw_body.decode("utf-8", errors="replace"))
     try:
-      payload = await request.json()
+      payload = json.loads(raw_body)
     except json.JSONDecodeError:
       LOGGER.warning("WEBHOOK invalid JSON — body was not parseable")
       return PlainTextResponse("OK")
 
     LOGGER.info("WEBHOOK payload keys=%s", list(payload.keys()) if isinstance(payload, dict) else type(payload).__name__)
+    LOGGER.info("WEBHOOK full payload: %s", json.dumps(payload, ensure_ascii=False))
 
     try:
       incoming = app.state.container.whatsapp.parse_incoming_message(payload)
