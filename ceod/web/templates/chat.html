@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CEO Mission Control - Chats</title>
+    <title>{{ app_title }}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -11,150 +11,955 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/static/dashboard.css" />
+    <style>
+      /* ── Layout ── */
+      .wa-shell {
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
+        background: #111;
+      }
+
+      /* ── Sidebar ── */
+      .wa-sidebar {
+        width: 340px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        background: #1a1a1a;
+        border-right: 1px solid #2a2a2a;
+      }
+      .wa-sidebar-head {
+        padding: 16px 16px 12px;
+        border-bottom: 1px solid #2a2a2a;
+      }
+      .wa-sidebar-head .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.78rem;
+        color: #888;
+        text-decoration: none;
+        margin-bottom: 12px;
+      }
+      .wa-sidebar-head .back-link:hover { color: #ccc; }
+      .wa-sidebar-head h1 {
+        font-family: "Bricolage Grotesque", sans-serif;
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #f0f0f0;
+        margin: 0 0 10px;
+      }
+      .wa-search {
+        width: 100%;
+        background: #252525;
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 8px 12px;
+        color: #f0f0f0;
+        font-size: 0.88rem;
+        outline: none;
+        box-sizing: border-box;
+      }
+      .wa-search::placeholder { color: #666; }
+      .wa-search:focus { border-color: #555; }
+
+      .wa-contact-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 4px 0;
+      }
+      .wa-contact-list::-webkit-scrollbar { width: 4px; }
+      .wa-contact-list::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+
+      .wa-contact-section-label {
+        padding: 10px 16px 4px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .wa-contact-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 16px;
+        cursor: pointer;
+        border-radius: 0;
+        transition: background 0.12s;
+        position: relative;
+      }
+      .wa-contact-item:hover { background: #242424; }
+      .wa-contact-item.is-active { background: #2a2a2a; }
+      .wa-contact-avatar {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background: #2e4a3e;
+        color: #5dab88;
+        font-size: 0.9rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-family: "Bricolage Grotesque", sans-serif;
+      }
+      .wa-contact-avatar.is-other { background: #3a3040; color: #a47ecf; }
+      .wa-contact-body { flex: 1; min-width: 0; }
+      .wa-contact-name {
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: #e8e8e8;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .wa-contact-preview {
+        font-size: 0.78rem;
+        color: #777;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-top: 2px;
+      }
+      .wa-contact-time {
+        font-size: 0.72rem;
+        color: #666;
+        flex-shrink: 0;
+        align-self: flex-start;
+        margin-top: 2px;
+      }
+      .wa-contact-unread {
+        font-size: 0.7rem;
+        background: #25d366;
+        color: #000;
+        border-radius: 10px;
+        padding: 1px 6px;
+        font-weight: 700;
+        flex-shrink: 0;
+      }
+
+      /* ── Main chat area ── */
+      .wa-main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: #0d1117;
+        min-width: 0;
+      }
+
+      /* empty state */
+      .wa-empty {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 12px;
+        color: #555;
+        text-align: center;
+        padding: 40px;
+      }
+      .wa-empty-icon {
+        font-size: 3rem;
+        opacity: 0.3;
+      }
+      .wa-empty h2 {
+        font-family: "Bricolage Grotesque", sans-serif;
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #666;
+        margin: 0;
+      }
+      .wa-empty p { font-size: 0.85rem; color: #555; margin: 0; }
+
+      /* chat header */
+      .wa-chat-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 20px;
+        background: #161b22;
+        border-bottom: 1px solid #21262d;
+        flex-shrink: 0;
+      }
+      .wa-chat-header-avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        background: #2e4a3e;
+        color: #5dab88;
+        font-size: 0.85rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "Bricolage Grotesque", sans-serif;
+      }
+      .wa-chat-header-avatar.is-other { background: #3a3040; color: #a47ecf; }
+      .wa-chat-header-info { flex: 1; min-width: 0; }
+      .wa-chat-header-name {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #e8e8e8;
+        margin: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .wa-chat-header-num {
+        font-size: 0.78rem;
+        color: #666;
+        margin: 0;
+      }
+
+      /* messages */
+      .wa-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px 24px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .wa-messages::-webkit-scrollbar { width: 4px; }
+      .wa-messages::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 4px; }
+
+      .wa-msg-row {
+        display: flex;
+        flex-direction: column;
+        max-width: 65%;
+      }
+      .wa-msg-row.out { align-self: flex-end; align-items: flex-end; }
+      .wa-msg-row.in { align-self: flex-start; align-items: flex-start; }
+
+      .wa-bubble {
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 0.88rem;
+        line-height: 1.5;
+        word-break: break-word;
+        white-space: pre-wrap;
+      }
+      .wa-bubble.out {
+        background: #005c4b;
+        color: #e9f5f2;
+        border-bottom-right-radius: 2px;
+      }
+      .wa-bubble.in {
+        background: #1e2630;
+        color: #e0e0e0;
+        border-bottom-left-radius: 2px;
+      }
+      .wa-msg-time {
+        font-size: 0.68rem;
+        color: #555;
+        margin-top: 3px;
+        padding: 0 2px;
+      }
+      .wa-day-divider {
+        align-self: center;
+        font-size: 0.72rem;
+        color: #555;
+        background: #161b22;
+        border: 1px solid #21262d;
+        border-radius: 10px;
+        padding: 3px 10px;
+        margin: 10px 0 6px;
+      }
+
+      /* ── Compose area ── */
+      .wa-compose-wrap {
+        flex-shrink: 0;
+        background: #161b22;
+        border-top: 1px solid #21262d;
+      }
+
+      /* file preview bar */
+      .wa-file-bar {
+        display: none;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+        background: #1a2130;
+        border-bottom: 1px solid #21262d;
+      }
+      .wa-file-bar.is-visible { display: flex; }
+      .wa-file-icon {
+        width: 36px;
+        height: 36px;
+        background: #253040;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+        flex-shrink: 0;
+      }
+      .wa-file-info { flex: 1; min-width: 0; }
+      .wa-file-name {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #d0d0d0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .wa-file-size { font-size: 0.72rem; color: #666; }
+      .wa-file-caption {
+        background: #253040;
+        border: 1px solid #2e3d50;
+        border-radius: 6px;
+        padding: 6px 10px;
+        color: #e0e0e0;
+        font-size: 0.82rem;
+        outline: none;
+        width: 180px;
+        flex-shrink: 0;
+      }
+      .wa-file-caption::placeholder { color: #556; }
+      .wa-file-send {
+        background: #25d366;
+        border: none;
+        border-radius: 50%;
+        width: 36px;
+        height: 36px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        flex-shrink: 0;
+        transition: background 0.15s;
+      }
+      .wa-file-send:hover { background: #1fb559; }
+      .wa-file-cancel {
+        background: none;
+        border: none;
+        color: #666;
+        cursor: pointer;
+        font-size: 1.1rem;
+        padding: 4px;
+        flex-shrink: 0;
+      }
+      .wa-file-cancel:hover { color: #aaa; }
+
+      /* recording bar */
+      .wa-record-bar {
+        display: none;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 16px;
+        background: #1a1220;
+        border-bottom: 1px solid #21262d;
+      }
+      .wa-record-bar.is-visible { display: flex; }
+      .wa-record-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #e74c4c;
+        animation: blink 1s infinite;
+        flex-shrink: 0;
+      }
+      @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+      .wa-record-label { font-size: 0.85rem; color: #e0d0e0; }
+      .wa-record-timer { font-size: 0.85rem; color: #c070c0; font-variant-numeric: tabular-nums; }
+      .wa-record-spacer { flex: 1; }
+      .wa-record-send {
+        display: none;
+        background: #25d366;
+        border: none;
+        border-radius: 50%;
+        width: 36px;
+        height: 36px;
+        cursor: pointer;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        transition: background 0.15s;
+      }
+      .wa-record-send.is-visible { display: flex; }
+      .wa-record-send:hover { background: #1fb559; }
+      .wa-record-cancel {
+        background: none;
+        border: none;
+        color: #666;
+        cursor: pointer;
+        font-size: 1.1rem;
+        padding: 4px;
+      }
+      .wa-record-cancel:hover { color: #aaa; }
+
+      /* status bar */
+      .wa-compose-status {
+        font-size: 0.78rem;
+        color: #777;
+        padding: 4px 16px 0;
+        min-height: 1.2em;
+      }
+      .wa-compose-status.is-error { color: #e07070; }
+      .wa-compose-status.is-success { color: #5dab88; }
+
+      /* compose row */
+      .wa-compose-row {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        padding: 10px 12px 12px;
+      }
+      .wa-compose-textarea {
+        flex: 1;
+        resize: none;
+        background: #252d38;
+        border: 1px solid #2e3d50;
+        border-radius: 20px;
+        padding: 10px 16px;
+        color: #e8e8e8;
+        font-family: "IBM Plex Sans", sans-serif;
+        font-size: 0.9rem;
+        line-height: 1.45;
+        outline: none;
+        max-height: 160px;
+        overflow-y: auto;
+        transition: border-color 0.15s;
+      }
+      .wa-compose-textarea:focus { border-color: #3d5570; }
+      .wa-compose-textarea::placeholder { color: #556; }
+      .wa-icon-btn {
+        background: none;
+        border: none;
+        color: #666;
+        cursor: pointer;
+        font-size: 1.3rem;
+        padding: 6px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: color 0.12s, background 0.12s;
+        flex-shrink: 0;
+        width: 40px;
+        height: 40px;
+      }
+      .wa-icon-btn:hover { color: #aaa; background: #222; }
+      .wa-icon-btn.is-recording { color: #e74c4c; }
+      .wa-send-btn {
+        background: #25d366;
+        border: none;
+        border-radius: 50%;
+        width: 42px;
+        height: 42px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+        flex-shrink: 0;
+        transition: background 0.15s;
+      }
+      .wa-send-btn:hover { background: #1fb559; }
+      .wa-send-btn:disabled { background: #2a3a2a; cursor: not-allowed; }
+
+      /* hidden file input */
+      #wa-file-input { display: none; }
+    </style>
   </head>
   <body class="chat-page">
-    <div class="chat-shell">
-      <aside class="chat-sidebar">
-        <div class="chat-sidebar-head">
-          <a class="back-link" href="/">Back to dashboard</a>
-          <p class="eyebrow">Live Messages</p>
-          <h1>Chats</h1>
-          <p class="chat-sidebar-text">
-            Open any thread to read the latest exchange and keep the team context close.
-          </p>
+    <div class="wa-shell">
+
+      <!-- ── Sidebar ── -->
+      <aside class="wa-sidebar">
+        <div class="wa-sidebar-head">
+          <a class="back-link" href="/">&#8592; Dashboard</a>
+          <h1>Messages</h1>
+          <input class="wa-search" type="search" id="wa-search" placeholder="Search contacts…" autocomplete="off" />
         </div>
-        <div class="conv-list" id="conv-list">
-          <div class="chat-loading">Loading...</div>
+        <div class="wa-contact-list" id="wa-contact-list">
+          <div class="wa-contact-section-label">Loading…</div>
         </div>
       </aside>
 
-      <main class="chat-main">
-        <div id="chat-header" class="chat-header" style="display:none">
-          <div class="chat-header-avatar" id="header-avatar"></div>
-          <div class="chat-header-info">
-            <h2 id="header-name"></h2>
-            <p id="header-number"></p>
+      <!-- ── Main ── -->
+      <main class="wa-main">
+
+        <!-- empty placeholder -->
+        <div class="wa-empty" id="wa-empty">
+          <div class="wa-empty-icon">💬</div>
+          <h2>Select a contact to start</h2>
+          <p>Pick someone from the left to view messages or send a new one.</p>
+        </div>
+
+        <!-- chat header (hidden until contact selected) -->
+        <div class="wa-chat-header" id="wa-chat-header" hidden>
+          <div class="wa-chat-header-avatar" id="wa-header-avatar"></div>
+          <div class="wa-chat-header-info">
+            <p class="wa-chat-header-name" id="wa-header-name"></p>
+            <p class="wa-chat-header-num" id="wa-header-num"></p>
           </div>
         </div>
-        <div id="chat-empty" class="chat-empty">
-          <div class="chat-empty-card">
-            <p class="eyebrow">Inbox</p>
-            <h2>Select a conversation</h2>
-            <p>Pick a thread from the left to read the latest messages.</p>
+
+        <!-- message bubbles -->
+        <div class="wa-messages" id="wa-messages" hidden></div>
+
+        <!-- compose -->
+        <div class="wa-compose-wrap" id="wa-compose-wrap" hidden>
+
+          <!-- file preview bar -->
+          <div class="wa-file-bar" id="wa-file-bar">
+            <div class="wa-file-icon">📎</div>
+            <div class="wa-file-info">
+              <div class="wa-file-name" id="wa-file-name">—</div>
+              <div class="wa-file-size" id="wa-file-size"></div>
+            </div>
+            <input class="wa-file-caption" id="wa-file-caption" type="text" placeholder="Caption (optional)" autocomplete="off" />
+            <button class="wa-file-send" id="wa-file-send" type="button" title="Send file">&#9658;</button>
+            <button class="wa-file-cancel" id="wa-file-cancel" type="button" title="Cancel">&#10005;</button>
+          </div>
+
+          <!-- recording bar -->
+          <div class="wa-record-bar" id="wa-record-bar">
+            <span class="wa-record-dot"></span>
+            <span class="wa-record-label" id="wa-record-label">Recording…</span>
+            <span class="wa-record-timer" id="wa-record-timer">0:00</span>
+            <span class="wa-record-spacer"></span>
+            <button class="wa-record-send" id="wa-record-send" type="button" title="Send voice note">&#9658;</button>
+            <button class="wa-record-cancel" id="wa-record-cancel" type="button" title="Discard">&#10005;</button>
+          </div>
+
+          <!-- status line -->
+          <div class="wa-compose-status" id="wa-compose-status"></div>
+
+          <!-- compose row -->
+          <div class="wa-compose-row">
+            <input type="file" id="wa-file-input" accept="*/*" />
+            <textarea
+              class="wa-compose-textarea"
+              id="wa-compose-text"
+              rows="1"
+              placeholder="Type a message…"
+            ></textarea>
+            <button class="wa-icon-btn" id="wa-attach-btn" type="button" title="Attach file">📎</button>
+            <button class="wa-icon-btn" id="wa-mic-btn" type="button" title="Record voice note">🎙</button>
+            <button class="wa-send-btn" id="wa-send-btn" type="button" title="Send message">&#9658;</button>
           </div>
         </div>
-        <div id="chat-messages" class="chat-messages" style="display:none"></div>
-        <div class="refresh-bar">
-          <span id="last-refresh">-</span>
-          <button id="refresh-btn" class="ghost-button chat-refresh-button" type="button">
-            Refresh
-          </button>
-        </div>
+
       </main>
     </div>
 
     <script>
-      let conversations = [];
+      // ── State ──
+      let contacts = [];      // [{number, name, isTeam, messages, last_timestamp}]
       let activeNumber = null;
+      let mediaRecorder = null;
+      let recordedBlob = null;
+      let recordedChunks = [];
+      let recordSeconds = 0;
+      let recordTimerInterval = null;
 
+      // ── DOM refs ──
+      const contactList   = document.getElementById("wa-contact-list");
+      const searchInput   = document.getElementById("wa-search");
+      const waEmpty       = document.getElementById("wa-empty");
+      const chatHeader    = document.getElementById("wa-chat-header");
+      const headerAvatar  = document.getElementById("wa-header-avatar");
+      const headerName    = document.getElementById("wa-header-name");
+      const headerNum     = document.getElementById("wa-header-num");
+      const messagesEl    = document.getElementById("wa-messages");
+      const composeWrap   = document.getElementById("wa-compose-wrap");
+      const composeText   = document.getElementById("wa-compose-text");
+      const sendBtn       = document.getElementById("wa-send-btn");
+      const attachBtn     = document.getElementById("wa-attach-btn");
+      const micBtn        = document.getElementById("wa-mic-btn");
+      const fileInput     = document.getElementById("wa-file-input");
+      const fileBar       = document.getElementById("wa-file-bar");
+      const fileName      = document.getElementById("wa-file-name");
+      const fileSize      = document.getElementById("wa-file-size");
+      const fileCaption   = document.getElementById("wa-file-caption");
+      const fileSend      = document.getElementById("wa-file-send");
+      const fileCancel    = document.getElementById("wa-file-cancel");
+      const recordBar     = document.getElementById("wa-record-bar");
+      const recordLabel   = document.getElementById("wa-record-label");
+      const recordTimer   = document.getElementById("wa-record-timer");
+      const recordSend    = document.getElementById("wa-record-send");
+      const recordCancel  = document.getElementById("wa-record-cancel");
+      const composeStatus = document.getElementById("wa-compose-status");
+
+      // ── Helpers ──
       function initials(name) {
-        return name.split(" ").slice(0, 2).map((word) => word[0] || "").join("").toUpperCase() || "?";
+        return name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
+      }
+
+      function esc(text) {
+        return String(text)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       }
 
       function fmtTime(ts) {
         if (!ts) return "";
-        try {
-          const date = new Date(ts);
-          return date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-        } catch {
-          return ts.slice(11, 16) || "";
-        }
+        try { return new Date(ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }); }
+        catch { return ts.slice(11, 16) || ""; }
       }
 
       function fmtDate(ts) {
         if (!ts) return "";
         try {
-          const date = new Date(ts);
-          const today = new Date();
-          if (date.toDateString() === today.toDateString()) return fmtTime(ts);
-          return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-        } catch {
-          return ts.slice(0, 10) || "";
-        }
+          const d = new Date(ts);
+          if (d.toDateString() === new Date().toDateString()) return fmtTime(ts);
+          return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+        } catch { return ts.slice(0, 10) || ""; }
       }
 
-      function esc(value) {
-        return String(value)
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;");
+      function fmtSize(bytes) {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / 1048576).toFixed(1)} MB`;
       }
 
-      function renderSidebar() {
-        const list = document.getElementById("conv-list");
-        if (!conversations.length) {
-          list.innerHTML = '<div class="no-convs">No conversations yet.</div>';
+      function fmtRecordTime(s) {
+        return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      }
+
+      function setStatus(msg, tone) {
+        composeStatus.textContent = msg;
+        composeStatus.className = "wa-compose-status" + (tone ? ` is-${tone}` : "");
+      }
+
+      // ── Build contact list ──
+      function mergeContacts(teamMembers, chatHistory) {
+        const map = new Map();
+
+        teamMembers.forEach((m) => {
+          map.set(m.number, { number: m.number, name: m.name, isTeam: true, messages: [], last_timestamp: "" });
+        });
+
+        chatHistory.forEach((conv) => {
+          if (map.has(conv.number)) {
+            const c = map.get(conv.number);
+            c.messages = conv.messages || [];
+            c.last_timestamp = conv.last_timestamp || "";
+          } else {
+            map.set(conv.number, {
+              number: conv.number,
+              name: conv.name || conv.number,
+              isTeam: false,
+              messages: conv.messages || [],
+              last_timestamp: conv.last_timestamp || "",
+            });
+          }
+        });
+
+        // team members first (sorted by last_timestamp desc), then others by last_timestamp
+        const team = [...map.values()].filter((c) => c.isTeam).sort((a, b) => b.last_timestamp.localeCompare(a.last_timestamp));
+        const others = [...map.values()].filter((c) => !c.isTeam).sort((a, b) => b.last_timestamp.localeCompare(a.last_timestamp));
+        return [...team, ...others];
+      }
+
+      function renderContactList() {
+        const q = searchInput.value.trim().toLowerCase();
+        const filtered = contacts.filter((c) => !q || c.name.toLowerCase().includes(q) || c.number.includes(q));
+        const team = filtered.filter((c) => c.isTeam);
+        const others = filtered.filter((c) => !c.isTeam);
+
+        if (filtered.length === 0) {
+          contactList.innerHTML = '<div class="wa-contact-section-label">No contacts found.</div>';
           return;
         }
 
-        list.innerHTML = conversations.map((conversation) => `
-          <div class="conv-item${conversation.number === activeNumber ? " is-active" : ""}" data-number="${conversation.number}">
-            <div class="conv-avatar">${initials(conversation.name)}</div>
-            <div class="conv-meta">
-              <div class="conv-name">${esc(conversation.name)}</div>
-              <div class="conv-preview">${esc((conversation.messages.at(-1) || {}).text || "")}</div>
-            </div>
-            <div class="conv-time">${fmtDate(conversation.last_timestamp)}</div>
-          </div>
-        `).join("");
+        let html = "";
+        if (team.length) {
+          html += '<div class="wa-contact-section-label">Team</div>';
+          html += team.map((c) => contactItemHtml(c)).join("");
+        }
+        if (others.length) {
+          html += '<div class="wa-contact-section-label">Others</div>';
+          html += others.map((c) => contactItemHtml(c)).join("");
+        }
+        contactList.innerHTML = html;
 
-        list.querySelectorAll(".conv-item").forEach((element) => {
-          element.addEventListener("click", () => selectConv(element.dataset.number));
+        contactList.querySelectorAll(".wa-contact-item").forEach((el) => {
+          el.addEventListener("click", () => selectContact(el.dataset.number));
         });
       }
 
-      function selectConv(number) {
-        activeNumber = number;
-        const conversation = conversations.find((entry) => entry.number === number);
-        if (!conversation) return;
-
-        document.getElementById("chat-empty").style.display = "none";
-        document.getElementById("chat-header").style.display = "flex";
-        document.getElementById("chat-messages").style.display = "flex";
-        document.getElementById("header-avatar").textContent = initials(conversation.name);
-        document.getElementById("header-name").textContent = conversation.name;
-        document.getElementById("header-number").textContent = "+" + conversation.number;
-
-        const box = document.getElementById("chat-messages");
-        box.innerHTML = conversation.messages.map((message) => `
-          <div class="msg-${message.direction}-wrap">
-            <div class="msg-bubble ${message.direction}">${esc(message.text).replace(/\n/g, "<br>")}</div>
-            <div class="msg-time">${fmtTime(message.timestamp)}</div>
+      function contactItemHtml(c) {
+        const isActive = c.number === activeNumber;
+        const lastMsg = c.messages.at(-1);
+        const preview = lastMsg ? lastMsg.text.replace(/\n/g, " ").slice(0, 50) : "No messages yet";
+        return `
+          <div class="wa-contact-item${isActive ? " is-active" : ""}" data-number="${esc(c.number)}">
+            <div class="wa-contact-avatar${c.isTeam ? "" : " is-other"}">${initials(c.name)}</div>
+            <div class="wa-contact-body">
+              <div class="wa-contact-name">${esc(c.name)}</div>
+              <div class="wa-contact-preview">${esc(preview)}</div>
+            </div>
+            ${c.last_timestamp ? `<div class="wa-contact-time">${fmtDate(c.last_timestamp)}</div>` : ""}
           </div>
-        `).join("");
-        box.scrollTop = box.scrollHeight;
-
-        renderSidebar();
+        `;
       }
 
-      async function load() {
+      // ── Select contact ──
+      function selectContact(number) {
+        activeNumber = number;
+        const contact = contacts.find((c) => c.number === number);
+        if (!contact) return;
+
+        const isTeam = contact.isTeam;
+        waEmpty.hidden = true;
+        chatHeader.hidden = false;
+        messagesEl.hidden = false;
+        composeWrap.hidden = false;
+
+        headerAvatar.textContent = initials(contact.name);
+        headerAvatar.className = "wa-chat-header-avatar" + (isTeam ? "" : " is-other");
+        headerName.textContent = contact.name;
+        headerNum.textContent = "+" + contact.number;
+
+        renderMessages(contact.messages);
+        renderContactList();
+        resetFileBar();
+        resetRecordBar();
+        setStatus("");
+      }
+
+      function renderMessages(messages) {
+        if (messages.length === 0) {
+          messagesEl.innerHTML = '<div style="text-align:center;color:#444;font-size:0.85rem;padding:24px">No messages yet. Say hello!</div>';
+          return;
+        }
+
+        let html = "";
+        let lastDate = "";
+        messages.forEach((msg) => {
+          const msgDate = msg.timestamp ? new Date(msg.timestamp).toDateString() : "";
+          if (msgDate && msgDate !== lastDate) {
+            lastDate = msgDate;
+            const label = msgDate === new Date().toDateString() ? "Today" : new Date(msg.timestamp).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+            html += `<div class="wa-day-divider">${label}</div>`;
+          }
+          html += `
+            <div class="wa-msg-row ${msg.direction}">
+              <div class="wa-bubble ${msg.direction}">${esc(msg.text).replace(/\n/g, "<br>")}</div>
+              <div class="wa-msg-time">${fmtTime(msg.timestamp)}</div>
+            </div>
+          `;
+        });
+
+        messagesEl.innerHTML = html;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      // ── Load data ──
+      async function loadData() {
         try {
-          const res = await fetch("/api/chats");
-          if (!res.ok) throw new Error(res.status);
-          const data = await res.json();
-          conversations = data.conversations || [];
-          renderSidebar();
-          if (activeNumber) selectConv(activeNumber);
-          document.getElementById("last-refresh").textContent = "Updated " + new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-        } catch {
-          document.getElementById("conv-list").innerHTML = '<div class="no-convs">Failed to load. Check API.</div>';
+          const [dashRes, chatsRes] = await Promise.all([
+            fetch("/api/dashboard", { headers: { Accept: "application/json" } }),
+            fetch("/api/chats", { headers: { Accept: "application/json" } }),
+          ]);
+          const dashData  = dashRes.ok  ? await dashRes.json()  : { members: [] };
+          const chatsData = chatsRes.ok ? await chatsRes.json() : { conversations: [] };
+
+          contacts = mergeContacts(dashData.members || [], chatsData.conversations || []);
+
+          if (activeNumber) {
+            const updated = contacts.find((c) => c.number === activeNumber);
+            if (updated) {
+              renderMessages(updated.messages);
+            }
+          }
+          renderContactList();
+        } catch (err) {
+          console.error("loadData failed", err);
         }
       }
 
-      document.getElementById("refresh-btn").addEventListener("click", load);
-      load();
-      setInterval(load, 30000);
+      // ── Send text ──
+      async function sendText() {
+        const to = activeNumber;
+        const message = composeText.value.trim();
+        if (!to) { setStatus("No contact selected.", "error"); return; }
+        if (!message) { setStatus("Enter a message first.", "error"); return; }
+        setStatus("Sending…");
+        sendBtn.disabled = true;
+        try {
+          const resp = await fetch("/api/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ to, message }),
+          });
+          if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            throw new Error(data.detail || "Send failed");
+          }
+          composeText.value = "";
+          autoResize();
+          setStatus("Sent.", "success");
+          await loadData();
+        } catch (err) {
+          setStatus(err.message || "Send failed.", "error");
+        } finally {
+          sendBtn.disabled = false;
+        }
+      }
+
+      // ── File bar ──
+      function resetFileBar() {
+        fileBar.classList.remove("is-visible");
+        fileInput.value = "";
+        fileCaption.value = "";
+        fileName.textContent = "—";
+        fileSize.textContent = "";
+      }
+
+      fileInput.addEventListener("change", () => {
+        const file = fileInput.files[0];
+        if (!file) { resetFileBar(); return; }
+        fileName.textContent = file.name;
+        fileSize.textContent = fmtSize(file.size);
+        fileCaption.value = "";
+        fileBar.classList.add("is-visible");
+        setStatus("");
+      });
+
+      attachBtn.addEventListener("click", () => { fileInput.click(); });
+      fileCancel.addEventListener("click", resetFileBar);
+
+      fileSend.addEventListener("click", async () => {
+        const to = activeNumber;
+        const file = fileInput.files[0];
+        if (!to) { setStatus("No contact selected.", "error"); return; }
+        if (!file) { setStatus("No file selected.", "error"); return; }
+        setStatus("Uploading…");
+        fileSend.disabled = true;
+        const form = new FormData();
+        form.append("to", to);
+        form.append("caption", fileCaption.value.trim());
+        form.append("file", file, file.name);
+        try {
+          const resp = await fetch("/api/send-media", { method: "POST", body: form });
+          if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            throw new Error(data.detail || "Upload failed");
+          }
+          resetFileBar();
+          setStatus("File sent.", "success");
+          await loadData();
+        } catch (err) {
+          setStatus(err.message || "Upload failed.", "error");
+        } finally {
+          fileSend.disabled = false;
+        }
+      });
+
+      // ── Record bar ──
+      function resetRecordBar() {
+        recordBar.classList.remove("is-visible");
+        recordSend.classList.remove("is-visible");
+        recordLabel.textContent = "Recording…";
+        recordTimer.textContent = "0:00";
+        recordedBlob = null;
+        recordedChunks = [];
+        recordSeconds = 0;
+        clearInterval(recordTimerInterval);
+        micBtn.classList.remove("is-recording");
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+        }
+        mediaRecorder = null;
+      }
+
+      micBtn.addEventListener("click", async () => {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+          return;
+        }
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          recordedChunks = [];
+          recordedBlob = null;
+          recordSeconds = 0;
+          recordTimer.textContent = "0:00";
+          recordLabel.textContent = "Recording…";
+          recordSend.classList.remove("is-visible");
+          recordBar.classList.add("is-visible");
+          micBtn.classList.add("is-recording");
+          setStatus("");
+
+          clearInterval(recordTimerInterval);
+          recordTimerInterval = setInterval(() => {
+            recordSeconds++;
+            recordTimer.textContent = fmtRecordTime(recordSeconds);
+          }, 1000);
+
+          mediaRecorder = new MediaRecorder(stream);
+          mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+          mediaRecorder.onstop = () => {
+            clearInterval(recordTimerInterval);
+            stream.getTracks().forEach((t) => t.stop());
+            micBtn.classList.remove("is-recording");
+            const mimeType = mediaRecorder.mimeType || "audio/webm";
+            recordedBlob = new Blob(recordedChunks, { type: mimeType });
+            recordLabel.textContent = `Ready · ${fmtRecordTime(recordSeconds)}`;
+            recordSend.classList.add("is-visible");
+          };
+          mediaRecorder.start();
+        } catch {
+          setStatus("Microphone access denied.", "error");
+        }
+      });
+
+      recordCancel.addEventListener("click", resetRecordBar);
+
+      recordSend.addEventListener("click", async () => {
+        const to = activeNumber;
+        if (!to) { setStatus("No contact selected.", "error"); return; }
+        if (!recordedBlob) { setStatus("No voice note recorded.", "error"); return; }
+        setStatus("Sending voice note…");
+        recordSend.disabled = true;
+        const ext = recordedBlob.type.includes("ogg") ? "ogg" : "webm";
+        const form = new FormData();
+        form.append("to", to);
+        form.append("caption", "");
+        form.append("file", recordedBlob, `voice.${ext}`);
+        try {
+          const resp = await fetch("/api/send-media", { method: "POST", body: form });
+          if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            throw new Error(data.detail || "Send failed");
+          }
+          resetRecordBar();
+          setStatus("Voice note sent.", "success");
+          await loadData();
+        } catch (err) {
+          setStatus(err.message || "Send failed.", "error");
+        } finally {
+          recordSend.disabled = false;
+        }
+      });
+
+      // ── Compose textarea ──
+      function autoResize() {
+        composeText.style.height = "auto";
+        composeText.style.height = Math.min(composeText.scrollHeight, 160) + "px";
+      }
+
+      composeText.addEventListener("input", autoResize);
+      composeText.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendText();
+        }
+      });
+      sendBtn.addEventListener("click", sendText);
+      searchInput.addEventListener("input", renderContactList);
+
+      // ── Boot ──
+      loadData();
+      setInterval(loadData, 30000);
     </script>
   </body>
 </html>
