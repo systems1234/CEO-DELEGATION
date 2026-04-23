@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from enum import IntEnum
 
 import gspread
@@ -72,9 +73,22 @@ class GoogleSheetsRepository:
     self._logger = logging.getLogger(__name__)
     credentials = self._build_credentials(settings)
     client = gspread.authorize(credentials)
-    self._spreadsheet = client.open_by_key(settings.spreadsheet_id)
+    self._spreadsheet = self._open_with_retry(client, settings.spreadsheet_id)
     self._sheet_cache: dict[str, gspread.Worksheet] = {}
     self._base_sheets_ensured: bool = False
+
+  def _open_with_retry(self, client: gspread.Client, spreadsheet_id: str) -> gspread.Spreadsheet:
+    delays = [0, 15, 30, 60]
+    for attempt, delay in enumerate(delays):
+      if delay:
+        self._logger.warning("Sheets API 429 on startup — retrying in %ds (attempt %d)", delay, attempt + 1)
+        time.sleep(delay)
+      try:
+        return client.open_by_key(spreadsheet_id)
+      except gspread.exceptions.APIError as exc:
+        if attempt < len(delays) - 1 and "429" in str(exc):
+          continue
+        raise
 
   def ensure_base_sheets(self) -> None:
     if self._base_sheets_ensured:
