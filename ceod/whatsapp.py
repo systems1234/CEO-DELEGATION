@@ -93,30 +93,32 @@ class _InboundMediaAnalysisMixin:
         }
       )
 
+    vision_model = "gpt-4o"
     payload = {
-      "model": self._settings.openai_model,
+      "model": vision_model,
       "temperature": 0,
       "max_tokens": 300,
-      "messages": [
-        {
-          "role": "user",
-          "content": content,
-        }
-      ],
+      "messages": [{"role": "user", "content": content}],
     }
 
+    self._logger.info("Vision request model=%s image_bytes=%d caption=%r",
+                      vision_model, len(image_bytes), caption[:80])
     try:
       response = self._client.post(
-        self._settings.openai_api_url,
+        "https://api.openai.com/v1/chat/completions",
         headers={"Authorization": f"Bearer {self._settings.openai_api_key}"},
         json=payload,
+        timeout=30.0,
       )
-      response.raise_for_status()
+      if not response.is_success:
+        self._logger.warning("Vision API error status=%s body=%s",
+                             response.status_code, response.text[:500])
+        return caption.strip()
       extracted = self._read_chat_message_text(response.json()).strip()
-      self._logger.info("Image extracted text len=%d chars", len(extracted))
+      self._logger.info("Vision extracted text=%r", extracted[:120])
       return extracted
     except Exception as exc:
-      self._logger.warning("Image text extraction failed: %s", exc)
+      self._logger.warning("Vision request failed: %s", exc)
       return caption.strip()
 
   def _extract_video_text(self, video_bytes: bytes, *, mime_type: str, caption: str = "") -> str:
@@ -441,9 +443,14 @@ class GreenAPIWhatsAppGateway(_InboundMediaAnalysisMixin):
       self._logger.info("GREEN_API voice note - transcribing")
       text = self._transcribe_voice_note(chat_id, id_message)
       self._logger.info("GREEN_API transcription result=%r", text[:120])
-    elif message_type in {"imageMessage", "videoMessage"}:
-      self._logger.info("GREEN_API ignoring %s - media messages not processed", message_type)
-      return None
+    elif message_type == "imageMessage":
+      self._logger.info("GREEN_API image message - analysing with vision")
+      text = self._extract_greenapi_image_text(chat_id, id_message, message_data)
+      self._logger.info("GREEN_API image extracted text=%r", text[:120])
+    elif message_type == "videoMessage":
+      self._logger.info("GREEN_API video message - transcribing")
+      text = self._extract_greenapi_video_text(chat_id, id_message, message_data)
+      self._logger.info("GREEN_API video extracted text=%r", text[:120])
     else:
       self._logger.info("GREEN_API ignoring unsupported messageType=%s", message_type)
       return None
@@ -470,6 +477,7 @@ class GreenAPIWhatsAppGateway(_InboundMediaAnalysisMixin):
     message_data: Mapping[str, object],
   ) -> str:
     image_bytes, mime_type = self._download_greenapi_media(chat_id, id_message, fallback_mime_type="image/jpeg")
+    self._logger.info("Image download: %d bytes mime=%s", len(image_bytes), mime_type)
     return self._extract_image_text(
       image_bytes,
       mime_type=mime_type,
