@@ -46,6 +46,14 @@ class SendTextPayload(BaseModel):
 
 
 def create_app(settings: Settings | None = None, container: "AppContainer" | None = None) -> FastAPI:
+  logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)s %(name)s | %(message)s",
+    force=True,
+  )
+  logging.getLogger("ceod").setLevel(logging.DEBUG)
+  LOGGER.info("Logging initialised — level=DEBUG")
+
   resolved_container = container or _build_runtime_container(settings)
   scheduler = _build_scheduler(resolved_container)
 
@@ -171,25 +179,41 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
 
   @app.post("/webhook")
   async def webhook_receive(request: Request) -> Response:
-    LOGGER.info("WEBHOOK hit from %s", request.client.host if request.client else "unknown")
+    LOGGER.debug("WEBHOOK [1/6] hit — client=%s method=%s path=%s",
+                 request.client.host if request.client else "unknown",
+                 request.method, request.url.path)
+    LOGGER.debug("WEBHOOK [2/6] headers=%s", dict(request.headers))
+
     raw_body = await request.body()
-    LOGGER.info("WEBHOOK raw body: %s", raw_body.decode("utf-8", errors="replace"))
-    try:
-      payload = json.loads(raw_body)
-    except json.JSONDecodeError:
-      LOGGER.warning("WEBHOOK invalid JSON — body was not parseable")
+    LOGGER.debug("WEBHOOK [3/6] raw body (%d bytes): %s",
+                 len(raw_body), raw_body.decode("utf-8", errors="replace"))
+
+    if not raw_body:
+      LOGGER.warning("WEBHOOK [3/6] empty body — ignoring")
       return PlainTextResponse("OK")
 
-    LOGGER.info("WEBHOOK payload keys=%s", list(payload.keys()) if isinstance(payload, dict) else type(payload).__name__)
-    LOGGER.info("WEBHOOK full payload: %s", json.dumps(payload, ensure_ascii=False))
+    try:
+      payload = json.loads(raw_body)
+    except json.JSONDecodeError as exc:
+      LOGGER.warning("WEBHOOK [4/6] JSON parse failed: %s — raw=%s", exc,
+                     raw_body.decode("utf-8", errors="replace")[:500])
+      return PlainTextResponse("OK")
+
+    LOGGER.debug("WEBHOOK [4/6] parsed JSON — type=%s keys=%s",
+                 type(payload).__name__,
+                 list(payload.keys()) if isinstance(payload, dict) else "n/a")
+    LOGGER.debug("WEBHOOK [4/6] full payload: %s", json.dumps(payload, ensure_ascii=False))
 
     try:
+      LOGGER.debug("WEBHOOK [5/6] calling parse_incoming_message")
       incoming = app.state.container.whatsapp.parse_incoming_message(payload)
       if incoming is not None:
-        LOGGER.info("WEBHOOK parsed OK from=%s text=%r", incoming.from_number, incoming.text[:80])
+        LOGGER.debug("WEBHOOK [5/6] parsed OK — from=%s text=%r", incoming.from_number, incoming.text[:120])
+        LOGGER.debug("WEBHOOK [6/6] dispatching to service.handle_incoming_message")
         app.state.container.service.handle_incoming_message(incoming)
+        LOGGER.debug("WEBHOOK [6/6] service handler returned OK")
       else:
-        LOGGER.info("WEBHOOK parse returned None — message ignored")
+        LOGGER.debug("WEBHOOK [5/6] parse_incoming_message returned None — message ignored")
     except Exception:
       LOGGER.exception("WEBHOOK processing failed")
 
