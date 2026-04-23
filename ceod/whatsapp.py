@@ -174,6 +174,29 @@ class GreenAPIWhatsAppGateway:
     except (KeyError, TypeError, ValueError) as exc:
       raise ExternalServiceError("Green API returned an invalid response payload") from exc
 
+  def send_file(self, to_number: str, file_bytes: bytes, filename: str, mime_type: str, caption: str = "") -> str:
+    chat_id = f"{normalise_whatsapp_number(to_number)}@c.us"
+    url = (
+      f"{self._settings.green_api_url.rstrip('/')}/"
+      f"waInstance{self._settings.green_api_instance_id}/"
+      f"sendFileByUpload/{self._settings.green_api_token}"
+    )
+    try:
+      response = self._client.post(
+        url,
+        data={"chatId": chat_id, "caption": caption},
+        files={"file": (filename, file_bytes, mime_type)},
+        timeout=60.0,
+      )
+      response.raise_for_status()
+    except httpx.HTTPError as exc:
+      raise ExternalServiceError(f"Green API file send failed: {exc}") from exc
+
+    try:
+      return str(response.json()["idMessage"])
+    except (KeyError, TypeError, ValueError) as exc:
+      raise ExternalServiceError("Green API returned an invalid response payload") from exc
+
 
 def build_whatsapp_gateway(settings: Settings) -> MetaWhatsAppGateway | GreenAPIWhatsAppGateway:
   if settings.wa_provider == "meta":

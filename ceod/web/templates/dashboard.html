@@ -84,6 +84,66 @@
             </div>
             <ul id="member-roster" class="member-roster"></ul>
           </section>
+
+          <section class="dm-card" aria-labelledby="dm-title">
+            <div class="panel-head compact">
+              <p class="panel-kicker">Direct Message</p>
+              <h3 id="dm-title">Send to WhatsApp</h3>
+            </div>
+
+            <label class="field">
+              <span>Recipient</span>
+              <select id="dm-recipient-select">
+                <option value="">Select team member</option>
+              </select>
+            </label>
+            <div id="dm-custom-wrap" hidden>
+              <label class="field">
+                <span>Custom number</span>
+                <input id="dm-custom-number" type="tel" placeholder="e.g. 919876543210" />
+              </label>
+            </div>
+            <button type="button" id="dm-toggle-custom" class="ghost-button dm-toggle-btn">+ Custom number</button>
+
+            <div class="dm-tabs" role="tablist" aria-label="Message type">
+              <button class="dm-tab is-active" type="button" data-mode="text" role="tab" aria-selected="true">Text</button>
+              <button class="dm-tab" type="button" data-mode="file" role="tab" aria-selected="false">Image / File</button>
+              <button class="dm-tab" type="button" data-mode="record" role="tab" aria-selected="false">Voice Note</button>
+            </div>
+
+            <div id="dm-text-panel">
+              <label class="field">
+                <span>Message</span>
+                <textarea id="dm-text-input" rows="3" maxlength="4000" placeholder="Type a message..."></textarea>
+              </label>
+              <button type="button" id="dm-send-text" class="submit-button">Send</button>
+            </div>
+
+            <div id="dm-file-panel" hidden>
+              <label class="field">
+                <span>File (image, audio, video, document)</span>
+                <input id="dm-file-input" type="file" class="file-input" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx" />
+              </label>
+              <label class="field">
+                <span>Caption (optional)</span>
+                <input id="dm-caption-input" type="text" maxlength="1024" placeholder="Add a caption..." />
+              </label>
+              <button type="button" id="dm-send-file" class="submit-button">Send File</button>
+            </div>
+
+            <div id="dm-record-panel" hidden>
+              <div class="recorder-row">
+                <button type="button" id="dm-record-btn" class="record-btn">
+                  <span class="record-dot"></span>Record
+                </button>
+                <span id="dm-record-timer" class="record-timer" hidden>0:00</span>
+              </div>
+              <p id="dm-record-hint" class="record-hint">Press record, speak, then stop.</p>
+              <button type="button" id="dm-send-voice" class="submit-button" hidden>Send Voice Note</button>
+            </div>
+
+            <p id="dm-status" class="form-status" aria-live="polite"></p>
+          </section>
         </section>
 
         <section class="board-panel" aria-labelledby="board-panel-title">

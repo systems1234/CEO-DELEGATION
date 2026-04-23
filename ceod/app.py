@@ -10,7 +10,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 WEB_ROOT = Path(__file__).resolve().parent / "web"
 TEMPLATES = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
-PROTECTED_DASHBOARD_PATHS = frozenset({"/", "/chat", "/api/dashboard", "/api/tasks", "/api/chats"})
+PROTECTED_DASHBOARD_PATHS = frozenset({"/", "/chat", "/api/dashboard", "/api/tasks", "/api/chats", "/api/send", "/api/send-media"})
 AUTH_CHALLENGE_HEADER = 'Basic realm="CEO Mission Control", charset="UTF-8"'
 
 
@@ -38,6 +38,11 @@ class TaskCreatePayload(BaseModel):
   assignee: str = Field(min_length=1)
   task: str = Field(min_length=1)
   due_date: str | None = None
+
+
+class SendTextPayload(BaseModel):
+  to: str = Field(min_length=1)
+  message: str = Field(min_length=1)
 
 
 def create_app(settings: Settings | None = None, container: "AppContainer" | None = None) -> FastAPI:
@@ -134,6 +139,29 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
       conversations[num]["last_timestamp"] = entry["timestamp"]
     result = sorted(conversations.values(), key=lambda c: c["last_timestamp"], reverse=True)
     return JSONResponse({"conversations": result})
+
+  @app.post("/api/send")
+  def send_direct_message(payload: SendTextPayload) -> JSONResponse:
+    try:
+      app.state.container.whatsapp.send_text(payload.to, payload.message)
+    except Exception as exc:
+      raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return JSONResponse({"ok": True})
+
+  @app.post("/api/send-media")
+  async def send_media_message(
+    to: str = Form(...),
+    caption: str = Form(default=""),
+    file: UploadFile = File(...),
+  ) -> JSONResponse:
+    content = await file.read()
+    mime_type = file.content_type or "application/octet-stream"
+    filename = file.filename or "upload"
+    try:
+      app.state.container.whatsapp.send_file(to, content, filename, mime_type, caption)
+    except Exception as exc:
+      raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return JSONResponse({"ok": True})
 
   @app.get("/webhook")
   def webhook_verify(request: Request) -> Response:
