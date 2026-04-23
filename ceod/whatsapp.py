@@ -17,16 +17,22 @@ from ceod.utils import normalise_whatsapp_number
 
 _AUDIO_TRANSCRIPTION_URL = "https://api.openai.com/v1/audio/transcriptions"
 _IMAGE_ANALYSIS_PROMPT_WITH_CAPTION = (
-  "A WhatsApp image was sent with the caption: \"{caption}\"\n\n"
-  "The caption is the primary instruction. Look at the image and extract only content that is "
-  "directly relevant to the caption's intent — names, dates, deadlines, or action items visible "
-  "in the image. Combine the caption and any relevant image details into a single plain-text "
-  "message a task management bot can parse. If the image adds nothing useful, return just the caption."
+  "This is a WhatsApp image. The sender's instruction (caption) is: \"{caption}\"\n\n"
+  "Your job: produce a single plain-text message that a task-assignment bot can parse.\n"
+  "Rules:\n"
+  "1. Start with the caption text exactly as written.\n"
+  "2. If a person's name or @mention is visible anywhere in the image, append it "
+  "   (e.g. 'Assign to Kushagra').\n"
+  "3. If a due date or deadline is visible, append it.\n"
+  "4. Ignore decorative text, song lyrics, ads, or any content unrelated to task assignment.\n"
+  "5. Do NOT include message IDs, timestamps, or system metadata.\n"
+  "Return only the final plain-text result. If the image adds nothing useful, return just the caption."
 )
 _IMAGE_ANALYSIS_PROMPT_NO_CAPTION = (
-  "Read this WhatsApp image. Extract any task-style instructions, names, dates, deadlines, or "
-  "action items visible in the image. Return only plain text. If there is no actionable content, "
-  "return an empty string."
+  "This is a WhatsApp image. Extract any task-assignment instructions visible in it.\n"
+  "Include: person names or @mentions, task descriptions, due dates, deadlines.\n"
+  "Exclude: message IDs, timestamps, song lyrics, ads, decorative text.\n"
+  "Return only plain text. If there is no actionable content, return an empty string."
 )
 _VIDEO_FRAME_LIMIT = 4
 _AUDIO_EXTENSION_BY_MIME_TYPE = {
@@ -119,8 +125,8 @@ class _InboundMediaAnalysisMixin:
       "messages": [{"role": "user", "content": content}],
     }
 
-    self._logger.info("Vision request model=%s image_bytes=%d caption=%r",
-                      vision_model, len(image_bytes), caption[:80])
+    self._logger.info("Vision request model=%s image_bytes=%d cleaned_caption=%r",
+                      vision_model, len(image_bytes), cleaned_caption[:80])
     try:
       response = self._client.post(
         "https://api.openai.com/v1/chat/completions",
@@ -131,13 +137,14 @@ class _InboundMediaAnalysisMixin:
       if not response.is_success:
         self._logger.warning("Vision API error status=%s body=%s",
                              response.status_code, response.text[:500])
-        return caption.strip()
-      extracted = self._read_chat_message_text(response.json()).strip()
+        return cleaned_caption
+      raw_extracted = self._read_chat_message_text(response.json()).strip()
+      extracted = _clean_media_caption(raw_extracted)
       self._logger.info("Vision extracted text=%r", extracted[:120])
       return extracted
     except Exception as exc:
       self._logger.warning("Vision request failed: %s", exc)
-      return caption.strip()
+      return cleaned_caption
 
   def _extract_video_text(self, video_bytes: bytes, *, mime_type: str, caption: str = "") -> str:
     cleaned_caption = _clean_media_caption(caption)
