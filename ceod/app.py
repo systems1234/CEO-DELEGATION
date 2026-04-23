@@ -151,7 +151,9 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
   @app.post("/api/send")
   def send_direct_message(payload: SendTextPayload) -> JSONResponse:
     try:
-      app.state.container.whatsapp.send_text(payload.to, payload.message)
+      app.state.container.service.send_text_message(to_number=payload.to, body=payload.message)
+    except ValueError as exc:
+      raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
       raise HTTPException(status_code=502, detail=str(exc)) from exc
     return JSONResponse({"ok": True})
@@ -166,7 +168,15 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
     mime_type = file.content_type or "application/octet-stream"
     filename = file.filename or "upload"
     try:
-      app.state.container.whatsapp.send_file(to, content, filename, mime_type, caption)
+      app.state.container.service.send_media_message(
+        to_number=to,
+        file_bytes=content,
+        filename=filename,
+        mime_type=mime_type,
+        caption=caption,
+      )
+    except ValueError as exc:
+      raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
       raise HTTPException(status_code=502, detail=str(exc)) from exc
     return JSONResponse({"ok": True})

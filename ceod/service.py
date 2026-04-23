@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date
 from typing import Protocol
 
 from ceod.models import DashboardSnapshot, DashboardStats, IncomingMessage, ParsedPostponeReply, ParsedTaskAssignment, SeedProfile, TaskRecord, TaskStatus, TeamMember
-from ceod.utils import extract_row_id, format_date_for_display, is_done_reply, is_postpone_reply, timezone_now, today_iso
+from ceod.utils import extract_row_id, format_date_for_display, is_done_reply, is_postpone_reply, normalise_whatsapp_number, timezone_now, today_iso
 
 
 class TaskParserProtocol(Protocol):
@@ -15,6 +16,7 @@ class TaskParserProtocol(Protocol):
 
 class WhatsAppGatewayProtocol(Protocol):
   def send_text(self, to_number: str, body: str) -> str: ...
+  def send_file(self, to_number: str, file_bytes: bytes, filename: str, mime_type: str, caption: str = "") -> str: ...
 
 
 class TaskRepositoryProtocol(Protocol):
@@ -41,6 +43,10 @@ class TaskRepositoryProtocol(Protocol):
 
 
 class TaskDelegationService:
+  _NAME_PREFIX_TEMPLATE = r"^\s*(?:@[\W_]*)?{name}\b(?:\s+ko\b)?[\s,:-]*"
+  _LEADING_POLITENESS_RE = re.compile(r"^(?:please|pls|plz)\b[\s,:-]*", re.IGNORECASE)
+  _TRAILING_PUNCTUATION_RE = re.compile(r"^[\s:,\-]+|[\s]+$")
+
   def __init__(
     self,
     *,
@@ -92,6 +98,55 @@ class TaskDelegationService:
 
   def seed_random_test_profiles(self, count: int = 10) -> list[SeedProfile]:
     return self._repository.seed_random_test_profiles(count)
+
+  def send_text_message(self, *, to_number: str, body: str) -> None:
+    cleaned_to_number = to_number.strip()
+    cleaned_body = body.strip()
+    if not cleaned_to_number:
+      raise ValueError("Recipient is required")
+    if not cleaned_body:
+      raise ValueError("Message is required")
+    try:
+      normalised_to_number = normalise_whatsapp_number(cleaned_to_number)
+    except Exception as exc:
+      raise ValueError("Recipient number is invalid") from exc
+    self._send(normalised_to_number, cleaned_body, name=self._resolve_contact_name(normalised_to_number))
+
+  def send_media_message(
+    self,
+    *,
+    to_number: str,
+    file_bytes: bytes,
+    filename: str,
+    mime_type: str,
+    caption: str = "",
+  ) -> None:
+    cleaned_to_number = to_number.strip()
+    cleaned_filename = filename.strip() or "upload"
+    cleaned_caption = caption.strip()
+
+    if not cleaned_to_number:
+      raise ValueError("Recipient is required")
+    if not file_bytes:
+      raise ValueError("File is required")
+    try:
+      normalised_to_number = normalise_whatsapp_number(cleaned_to_number)
+    except Exception as exc:
+      raise ValueError("Recipient number is invalid") from exc
+
+    self._whatsapp.send_file(normalised_to_number, file_bytes, cleaned_filename, mime_type, cleaned_caption)
+
+    try:
+      ts = timezone_now(self._timezone_name).isoformat(timespec="seconds")
+      self._repository.log_message(
+        ts,
+        "out",
+        normalised_to_number,
+        self._resolve_contact_name(normalised_to_number),
+        self._format_media_log_text(cleaned_filename, cleaned_caption),
+      )
+    except Exception:
+      self._logger.warning("Failed to log outgoing media message to %s", normalised_to_number)
 
   def assign_task(
     self,
@@ -187,7 +242,10 @@ class TaskDelegationService:
 
     members = self._repository.get_team_members()
     known_names = [member.name for member in members]
-    parsed = self._parser.parse_task_assignment(text, known_names)
+    normalised_text = self._normalise_task_mentions(text, members)
+    parsed = self._parser.parse_task_assignment(normalised_text, known_names)
+    if parsed is None:
+      parsed = self._parse_explicit_assignment(normalised_text, members)
     if parsed is None:
       self._logger.info("Ignoring non-task CEO message")
       return
@@ -320,6 +378,78 @@ class TaskDelegationService:
       self._repository.log_message(ts, "out", to_number, name or to_number, body)
     except Exception:
       self._logger.warning("Failed to log outgoing message to %s", to_number)
+
+  def _normalise_task_mentions(self, text: str, members: list[TeamMember]) -> str:
+    normalised_text = text
+    for member in sorted(members, key=lambda item: len(item.name), reverse=True):
+      for pattern in self._member_mention_patterns(member):
+        normalised_text = pattern.sub(member.name, normalised_text)
+    return re.sub(r"[ \t]+", " ", normalised_text).strip()
+
+  def _parse_explicit_assignment(self, text: str, members: list[TeamMember]) -> ParsedTaskAssignment | None:
+    stripped_text = text.strip()
+    if not stripped_text:
+      return None
+
+    for member in sorted(members, key=lambda item: len(item.name), reverse=True):
+      body = self._strip_member_prefix(stripped_text, member)
+      if body is None:
+        continue
+      task = self._clean_task_body(body)
+      if task:
+        return ParsedTaskAssignment(
+          assignee=member.name,
+          task=task,
+          due_date=None,
+        )
+    return None
+
+  def _member_mention_patterns(self, member: TeamMember) -> list[re.Pattern[str]]:
+    patterns: list[re.Pattern[str]] = [
+      re.compile(rf"@[\W_]*\+?{re.escape(member.number)}\b", re.IGNORECASE),
+    ]
+    local_number = member.number[-10:]
+    if local_number != member.number:
+      patterns.append(re.compile(rf"@[\W_]*\+?{re.escape(local_number)}\b", re.IGNORECASE))
+    name_pattern = self._member_name_pattern(member)
+    patterns.append(re.compile(rf"@[\W_]*{name_pattern}\b", re.IGNORECASE))
+    return patterns
+
+  def _strip_member_prefix(self, text: str, member: TeamMember) -> str | None:
+    prefix_re = re.compile(
+      self._NAME_PREFIX_TEMPLATE.format(name=self._member_name_pattern(member)),
+      re.IGNORECASE,
+    )
+    match = prefix_re.match(text)
+    if match is None:
+      return None
+    return text[match.end():]
+
+  def _clean_task_body(self, body: str) -> str | None:
+    task = self._LEADING_POLITENESS_RE.sub("", body).strip()
+    task = self._TRAILING_PUNCTUATION_RE.sub("", task)
+    if len(task) < 4 or not any(char.isalnum() for char in task):
+      return None
+    if task.lower() in {"hi", "hello", "thanks", "thank you", "ok", "okay"}:
+      return None
+    return task
+
+  def _member_name_pattern(self, member: TeamMember) -> str:
+    return r"[\W_]+".join(re.escape(part) for part in member.name.split())
+
+  def _resolve_contact_name(self, number: str) -> str:
+    try:
+      normalised_number = normalise_whatsapp_number(number)
+    except Exception:
+      return number
+    members = self._repository.get_team_members()
+    return next((member.name for member in members if member.number == normalised_number), normalised_number)
+
+  def _format_media_log_text(self, filename: str, caption: str) -> str:
+    prefix = f"[File] {filename}"
+    if not caption:
+      return prefix
+    return f"{prefix}\n{caption}"
 
   def _notify_ceo(self, message: str) -> None:
     self._send(self._ceo_number, f"Task Update\n\n{message}", name="CEO")

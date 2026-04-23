@@ -18,7 +18,7 @@ POSTPONE_REPLY_RE = re.compile(
   re.IGNORECASE,
 )
 ROW_ID_RE = re.compile(r"\bT\d{13}[0-9A-F]{4}\b")
-DATE_FLEXIBLE_RE = re.compile(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$")
+DATE_FLEXIBLE_RE = re.compile(r"(?<!\d)(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?!\d)")
 
 
 def timezone_now(timezone_name: str) -> datetime:
@@ -50,7 +50,7 @@ def normalise_whatsapp_number(raw_value: str | None) -> str:
 def parse_date_flexible(value: str | None) -> str | None:
   if not value:
     return None
-  match = DATE_FLEXIBLE_RE.match(value.strip())
+  match = DATE_FLEXIBLE_RE.search(value.strip())
   if not match:
     return None
   day, month, year = [int(part) for part in match.groups()]
@@ -129,4 +129,3 @@ def generate_random_indian_mobile(existing_numbers: set[str]) -> str:
     full_number = f"91{local_number}"
     if full_number not in existing_numbers:
       return full_number
-

@@ -31,10 +31,21 @@ class FakeParser:
 class FakeWhatsAppGateway:
   def __init__(self) -> None:
     self.messages: list[tuple[str, str]] = []
+    self.files: list[tuple[str, str, str, str]] = []
 
   def send_text(self, to_number: str, body: str) -> str:
     self.messages.append((to_number, body))
     return f"msg-{len(self.messages)}"
+
+  def send_file(self, to_number: str, file_bytes: bytes, filename: str, mime_type: str, caption: str = "") -> str:
+    self.files.append((to_number, filename, mime_type, caption))
+    return f"file-{len(self.files)}"
+
+  def verify_get(self, params: object) -> tuple[bool, str]:
+    return True, "ok"
+
+  def parse_incoming_message(self, payload: object) -> None:
+    return None
 
 
 class FakeRepository:
@@ -242,6 +253,30 @@ class TaskDelegationServiceTests(unittest.TestCase):
     self.assertIn("you have been assigned a new task", self.gateway.messages[0][1])
     self.assertEqual(self.repository.get_pending_commitment("919000000001"), task.row_id)
 
+  def test_dashboard_assigned_task_accepts_commitment_reply_with_context(self) -> None:
+    task = self.service.assign_task(assignee="Rahul", task="Call supplier", due_date="2026-04-24")
+
+    self.service.handle_incoming_message(
+      IncomingMessage(
+        from_number="919000000001",
+        text=f"I will finish this by 25/04/2026. Ref: {task.row_id}",
+      )
+    )
+
+    self.assertEqual(self.repository.tasks[task.row_id].due_date, "2026-04-25")
+    self.assertIsNone(self.repository.get_pending_commitment("919000000001"))
+
+  def test_ceo_assignment_falls_back_for_number_mentions_when_parser_returns_none(self) -> None:
+    self.parser.assignment = None
+
+    self.service.handle_incoming_message(
+      IncomingMessage(from_number="919999999999", text="@919000000001 Test a testing task.")
+    )
+
+    task = next(iter(self.repository.tasks.values()))
+    self.assertEqual(task.assignee_name, "Rahul")
+    self.assertEqual(task.task, "Test a testing task.")
+
   def test_dashboard_snapshot_counts_tasks(self) -> None:
     self.repository.tasks["T1"] = TaskRecord(
       row_id="T1",
@@ -289,10 +324,7 @@ class DashboardAppTests(unittest.TestCase):
         dashboard_password="secret-pass",
       ),
       service=self.service,
-      whatsapp=SimpleNamespace(
-        verify_get=lambda params: (True, "ok"),
-        parse_incoming_message=lambda payload: None,
-      ),
+      whatsapp=self.gateway,
       close=lambda: None,
     )
     self.client = TestClient(create_app(container=fake_container))
@@ -337,6 +369,21 @@ class DashboardAppTests(unittest.TestCase):
     payload = response.json()
     self.assertEqual(payload["task"]["task"], "Frontend-created task")
     self.assertEqual(len(self.repository.tasks), 2)
+
+  def test_send_api_logs_message_for_chat_history(self) -> None:
+    response = self.client.post(
+      "/api/send",
+      headers=self.auth_headers,
+      json={"to": "919000000001", "message": "Manual follow-up"},
+    )
+
+    self.assertEqual(response.status_code, 200)
+    chat_response = self.client.get("/api/chats", headers=self.auth_headers)
+    self.assertEqual(chat_response.status_code, 200)
+    payload = chat_response.json()
+    messages = payload["conversations"][0]["messages"]
+    self.assertEqual(messages[-1]["text"], "Manual follow-up")
+    self.assertEqual(messages[-1]["direction"], "out")
 
 
 if __name__ == "__main__":
