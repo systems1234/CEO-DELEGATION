@@ -94,32 +94,47 @@ class GreenAPIWhatsAppGateway:
 
   def parse_incoming_message(self, payload: dict[str, object]) -> IncomingMessage | None:
     type_webhook = str(payload.get("typeWebhook", ""))
+    self._logger.info("GREEN_API typeWebhook=%s", type_webhook)
+
     if type_webhook != "incomingMessageReceived":
-      self._logger.info("Ignoring Green API webhook type=%s", type_webhook)
+      self._logger.info("GREEN_API ignoring — not incomingMessageReceived")
       return None
 
     message_data = payload.get("messageData", {})
     message_type = str(message_data.get("typeMessage", ""))
     sender_data = payload.get("senderData", {})
-    text = ""
+    chat_id = str(sender_data.get("chatId") or "")
+    sender = str(sender_data.get("sender") or "")
+    id_message = str(payload.get("idMessage", ""))
 
+    self._logger.info(
+      "GREEN_API messageType=%s chatId=%s sender=%s idMessage=%s",
+      message_type, chat_id, sender, id_message,
+    )
+
+    text = ""
     if message_type == "textMessage":
       text = str(message_data.get("textMessageData", {}).get("textMessage", "")).strip()
+      self._logger.info("GREEN_API text message text=%r", text[:120])
     elif message_type in {"quotedMessage", "extendedTextMessage"}:
       text = str(message_data.get("extendedTextMessageData", {}).get("text", "")).strip()
+      self._logger.info("GREEN_API extended/quoted text=%r", text[:120])
     elif message_type in {"pttMessage", "audioMessage"}:
-      id_message = str(payload.get("idMessage", ""))
-      chat_id = str(sender_data.get("chatId") or "")
+      self._logger.info("GREEN_API voice note — transcribing")
       text = self._transcribe_voice_note(chat_id, id_message)
+      self._logger.info("GREEN_API transcription result=%r", text[:120])
     else:
-      self._logger.info("Ignoring Green API message type=%s", message_type)
+      self._logger.info("GREEN_API ignoring unsupported messageType=%s", message_type)
       return None
 
     if not text:
+      self._logger.info("GREEN_API empty text after extraction — ignoring")
       return None
 
-    raw_sender = str(sender_data.get("sender") or sender_data.get("chatId") or "")
-    return IncomingMessage(from_number=normalise_whatsapp_number(raw_sender), text=text)
+    raw_sender = sender or chat_id
+    normalised = normalise_whatsapp_number(raw_sender)
+    self._logger.info("GREEN_API resolved from_number=%s", normalised)
+    return IncomingMessage(from_number=normalised, text=text)
 
   def _transcribe_voice_note(self, chat_id: str, id_message: str) -> str:
     try:

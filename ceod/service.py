@@ -67,9 +67,12 @@ class TaskDelegationService:
       self._logger.warning("Failed to log incoming message from %s", message.from_number)
 
     self._logger.info("MSG in from=%s text=%r", message.from_number, message.text[:60])
+    self._logger.info("MSG routing: from=%s ceo=%s is_ceo=%s", message.from_number, self._ceo_number, message.from_number == self._ceo_number)
     if message.from_number == self._ceo_number:
+      self._logger.info("MSG routed to CEO handler")
       self._handle_ceo_message(message.text)
       return
+    self._logger.info("MSG routed to assignee handler")
     self._handle_assignee_reply(message.from_number, message.text)
 
   def daily_follow_up_check(self) -> None:
