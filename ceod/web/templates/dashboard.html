@@ -17,36 +17,60 @@
     <link rel="stylesheet" href="/static/dashboard.css" />
   </head>
   <body
+    class="dashboard-page"
     data-dashboard-url="{{ api_dashboard_url }}"
     data-task-url="{{ api_task_url }}"
   >
     <a class="skip-link" href="#main-content">Skip to content</a>
     <div class="page-shell">
-      <header class="hero">
-        <div class="hero-copy">
+      <header class="app-bar">
+        <div class="app-bar-copy">
           <p class="eyebrow">CEO Mission Control</p>
-          <h1>See the work, steer the team, assign in one place.</h1>
-          <p class="hero-text">
-            This dashboard mirrors the live task system behind WhatsApp. The CEO can
-            review status, spot overdue work, and assign new tasks without opening Sheets.
+          <h1 class="app-title">Operations dashboard</h1>
+          <p class="app-subtitle">
+            Live task routing, board visibility, and direct WhatsApp actions.
           </p>
         </div>
-        <div class="hero-actions">
+        <div class="app-bar-actions">
+          <a class="ghost-button" href="/chat">Open chats</a>
           <button id="refresh-button" class="ghost-button" type="button">
             Refresh Board
           </button>
+        </div>
+      </header>
+
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">Mission Board</p>
+          <h2 id="hero-title">See the work. Steer the team.</h2>
+          <p class="hero-text">
+            Review active work, catch overdue tasks, and assign new asks from one calm surface.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <div class="hero-note">
+            <p class="hero-note-kicker">Clean flow</p>
+            <ul class="hero-note-list">
+              <li>Assign work without leaving the board</li>
+              <li>Track due, overdue, and done states fast</li>
+              <li>Message the team from the same workspace</li>
+            </ul>
+          </div>
           <div class="pulse-wrap" aria-live="polite">
             <span class="pulse-dot"></span>
             <span id="refresh-status">Live sync active</span>
           </div>
         </div>
-      </header>
+      </section>
 
       <main id="main-content" class="dashboard-layout">
         <section class="assign-panel" aria-labelledby="assign-panel-title">
           <div class="panel-head">
             <p class="panel-kicker">Command Deck</p>
-            <h2 id="assign-panel-title">Assign a task from the frontend</h2>
+            <h2 id="assign-panel-title">Assign work</h2>
+            <p class="panel-text">
+              Create a task, route it to the right person, and keep the board current.
+            </p>
           </div>
           <form id="assign-form" class="assign-form">
             <label class="field">
@@ -103,12 +127,20 @@
                 <input id="dm-custom-number" type="tel" placeholder="e.g. 919876543210" />
               </label>
             </div>
-            <button type="button" id="dm-toggle-custom" class="ghost-button dm-toggle-btn">+ Custom number</button>
+            <button type="button" id="dm-toggle-custom" class="ghost-button dm-toggle-btn">
+              + Custom number
+            </button>
 
             <div class="dm-tabs" role="tablist" aria-label="Message type">
-              <button class="dm-tab is-active" type="button" data-mode="text" role="tab" aria-selected="true">Text</button>
-              <button class="dm-tab" type="button" data-mode="file" role="tab" aria-selected="false">Image / File</button>
-              <button class="dm-tab" type="button" data-mode="record" role="tab" aria-selected="false">Voice Note</button>
+              <button class="dm-tab is-active" type="button" data-mode="text" role="tab" aria-selected="true">
+                Text
+              </button>
+              <button class="dm-tab" type="button" data-mode="file" role="tab" aria-selected="false">
+                Image / File
+              </button>
+              <button class="dm-tab" type="button" data-mode="record" role="tab" aria-selected="false">
+                Voice Note
+              </button>
             </div>
 
             <div id="dm-text-panel">
@@ -122,7 +154,12 @@
             <div id="dm-file-panel" hidden>
               <label class="field">
                 <span>File (image, audio, video, document)</span>
-                <input id="dm-file-input" type="file" class="file-input" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx" />
+                <input
+                  id="dm-file-input"
+                  type="file"
+                  class="file-input"
+                  accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
+                />
               </label>
               <label class="field">
                 <span>Caption (optional)</span>
@@ -151,6 +188,9 @@
             <div>
               <p class="panel-kicker">Operations View</p>
               <h2 id="board-panel-title">Task board</h2>
+              <p class="panel-text">
+                A single view for current workload, follow-up pressure, and completed work.
+              </p>
             </div>
             <p id="snapshot-meta" class="snapshot-meta">Awaiting first sync...</p>
           </div>
@@ -238,4 +278,3 @@
     <script src="/static/dashboard.js" defer></script>
   </body>
 </html>
-

@@ -274,7 +274,7 @@ function fmtRecordTime(s) {
 dmToggleCustom.addEventListener("click", () => {
   dmCustomVisible = !dmCustomVisible;
   dmCustomWrap.hidden = !dmCustomVisible;
-  dmToggleCustom.textContent = dmCustomVisible ? "− Use team member" : "+ Custom number";
+  dmToggleCustom.textContent = dmCustomVisible ? "- Use team member" : "+ Custom number";
   if (dmCustomVisible) {
     dmRecipientSelect.value = "";
   } else {

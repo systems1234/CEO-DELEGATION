@@ -125,7 +125,7 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
 
   @app.get("/chat", response_class=HTMLResponse)
   def chat_page(request: Request) -> HTMLResponse:
-    return TEMPLATES.TemplateResponse(request=request, name="chat.html", context={"app_title": "CEO Mission Control — Chats"})
+    return TEMPLATES.TemplateResponse(request=request, name="chat.html", context={"app_title": "CEO Mission Control - Chats"})
 
   @app.get("/api/chats")
   def get_chats() -> JSONResponse:

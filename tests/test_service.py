@@ -42,6 +42,8 @@ class FakeRepository:
     self.members = [TeamMember(name="Rahul", number="919000000001", sheet_name="Rahul Tasks")]
     self.tasks: dict[str, TaskRecord] = {}
     self.pending_postpone: dict[str, str] = {}
+    self.pending_commitment: dict[str, str] = {}
+    self.chat_log: list[dict[str, str]] = []
     self.seed_profiles: list[SeedProfile] = []
 
   def get_team_members(self) -> list[TeamMember]:
@@ -118,6 +120,33 @@ class FakeRepository:
   def clear_pending_postpone(self, number: str) -> None:
     self.pending_postpone.pop(number, None)
 
+  def set_pending_commitment(self, number: str, row_id: str) -> None:
+    self.pending_commitment[number] = row_id
+
+  def get_pending_commitment(self, number: str) -> str | None:
+    return self.pending_commitment.get(number)
+
+  def clear_pending_commitment(self, number: str) -> None:
+    self.pending_commitment.pop(number, None)
+
+  def commit_task_due_date(self, row_id: str, due_date: str) -> None:
+    task = self.tasks[row_id]
+    self.tasks[row_id] = replace(task, due_date=due_date)
+
+  def log_message(self, timestamp: str, direction: str, number: str, name: str, text: str) -> None:
+    self.chat_log.append(
+      {
+        "timestamp": timestamp,
+        "direction": direction,
+        "number": number,
+        "name": name,
+        "text": text,
+      }
+    )
+
+  def get_chat_log(self) -> list[dict[str, str]]:
+    return list(self.chat_log)
+
   def seed_random_test_profiles(self, count: int) -> list[SeedProfile]:
     self.seed_profiles = [
       SeedProfile(name=f"User {index}", number=f"919000000{index:03d}", sheet_name=f"User_{index}")
@@ -151,15 +180,17 @@ class TaskDelegationServiceTests(unittest.TestCase):
   def test_done_reply_marks_task_done(self) -> None:
     self.service.handle_incoming_message(IncomingMessage(from_number="919999999999", text="Rahul ko report bhejo"))
     row_id = next(iter(self.repository.tasks.keys()))
+    self.service.handle_incoming_message(IncomingMessage(from_number="919000000001", text="25/04/2026"))
 
     self.service.handle_incoming_message(IncomingMessage(from_number="919000000001", text=f"Done {row_id}"))
 
     self.assertEqual(self.repository.tasks[row_id].status, TaskStatus.DONE)
-    self.assertEqual(len(self.gateway.messages), 4)
+    self.assertEqual(len(self.gateway.messages), 6)
 
   def test_postpone_flow_uses_pending_state_before_generic_postpone_match(self) -> None:
     self.service.handle_incoming_message(IncomingMessage(from_number="919999999999", text="Rahul ko report bhejo"))
     row_id = next(iter(self.repository.tasks.keys()))
+    self.service.handle_incoming_message(IncomingMessage(from_number="919000000001", text="25/04/2026"))
 
     self.service.handle_incoming_message(IncomingMessage(from_number="919000000001", text=f"Postpone {row_id}"))
     self.assertEqual(self.repository.get_pending_postpone("919000000001"), row_id)
@@ -208,7 +239,8 @@ class TaskDelegationServiceTests(unittest.TestCase):
     self.assertEqual(task.task, "Call supplier")
     self.assertEqual(task.due_date, "2026-04-24")
     self.assertEqual(len(self.gateway.messages), 1)
-    self.assertIn("New Task Assigned", self.gateway.messages[0][1])
+    self.assertIn("you have been assigned a new task", self.gateway.messages[0][1])
+    self.assertEqual(self.repository.get_pending_commitment("919000000001"), task.row_id)
 
   def test_dashboard_snapshot_counts_tasks(self) -> None:
     self.repository.tasks["T1"] = TaskRecord(
@@ -277,12 +309,23 @@ class DashboardAppTests(unittest.TestCase):
     self.assertEqual(response.status_code, 200)
     self.assertIn("Mission Control", response.text)
 
+  def test_chat_page_loads(self) -> None:
+    response = self.client.get("/chat", headers=self.auth_headers)
+    self.assertEqual(response.status_code, 200)
+    self.assertIn("Chats", response.text)
+
   def test_dashboard_api_returns_snapshot(self) -> None:
     response = self.client.get("/api/dashboard", headers=self.auth_headers)
     self.assertEqual(response.status_code, 200)
     payload = response.json()
     self.assertEqual(payload["stats"]["total_tasks"], 1)
     self.assertEqual(payload["members"][0]["name"], "Rahul")
+
+  def test_chat_api_returns_conversations(self) -> None:
+    response = self.client.get("/api/chats", headers=self.auth_headers)
+    self.assertEqual(response.status_code, 200)
+    payload = response.json()
+    self.assertEqual(payload["conversations"][0]["number"], "919000000001")
 
   def test_assign_task_api_creates_task(self) -> None:
     response = self.client.post(

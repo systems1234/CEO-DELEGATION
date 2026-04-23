@@ -1,11 +1,16 @@
-INFO:     Started server process [30040]
+INFO:     Started server process [20484]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     127.0.0.1:64682 - "GET /healthz HTTP/1.1" 200 OK
-INFO:     127.0.0.1:64691 - "GET /api/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55471 - "GET /api/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:55475 - "POST /api/tasks HTTP/1.1" 201 Created
-INFO:     127.0.0.1:52428 - "GET /api/chats HTTP/1.1" 200 OK
-INFO:     127.0.0.1:57753 - "GET /api/dashboard HTTP/1.1" 200 OK
-INFO:     127.0.0.1:52144 - "POST /webhook HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57905 - "GET /healthz HTTP/1.1" 200 OK
+WhatsApp send to 918920139546 failed: Green API send failed: Client error '466 Client Error (466)' for url 'https://7107.api.greenapi.com/waInstance7107596243/sendMessage/1fad30d19bb0465a80bbb68840a7184b4d2f92a6772345e686'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/466
+INFO:     127.0.0.1:57910 - "POST /api/tasks HTTP/1.1" 201 Created
+WhatsApp send to 918920139546 failed: Green API send failed: Client error '466 Client Error (466)' for url 'https://7107.api.greenapi.com/waInstance7107596243/sendMessage/1fad30d19bb0465a80bbb68840a7184b4d2f92a6772345e686'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/466
+INFO:     127.0.0.1:54686 - "POST /webhook HTTP/1.1" 200 OK
+WhatsApp send to 918920139546 failed: Green API send failed: Client error '466 Client Error (466)' for url 'https://7107.api.greenapi.com/waInstance7107596243/sendMessage/1fad30d19bb0465a80bbb68840a7184b4d2f92a6772345e686'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/466
+INFO:     127.0.0.1:54691 - "POST /webhook HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54705 - "GET /api/chats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50477 - "GET /api/dashboard HTTP/1.1" 200 OK

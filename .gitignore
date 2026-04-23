@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 gen-lang-client-*.json
 *service-account*.json
+*error.txt*
