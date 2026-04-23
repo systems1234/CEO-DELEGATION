@@ -8,3 +8,4 @@ pydantic
 pydantic-settings
 uvicorn==0.34.0
 gunicorn
+python-multipart
