@@ -7,6 +7,20 @@ const state = {
   filter: "all",
   refreshing: false,
 };
+const searchParams = new URLSearchParams(window.location.search);
+const LOCALE = "en-IN";
+const dateFormatter = new Intl.DateTimeFormat(LOCALE, {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+const dateTimeFormatter = new Intl.DateTimeFormat(LOCALE, {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 const memberRoster = document.getElementById("member-roster");
 const assigneeSelect = document.getElementById("assignee-select");
@@ -19,6 +33,8 @@ const assignForm = document.getElementById("assign-form");
 const formStatus = document.getElementById("form-status");
 const snapshotMeta = document.getElementById("snapshot-meta");
 const cardTemplate = document.getElementById("task-card-template");
+const railTabs = Array.from(document.querySelectorAll(".rail-tab"));
+const railPanels = Array.from(document.querySelectorAll(".rail-panel"));
 
 const statusElements = {
   active: document.getElementById("stat-active"),
@@ -30,6 +46,56 @@ const statusElements = {
 };
 
 const filterButtons = Array.from(document.querySelectorAll(".filter-chip"));
+const laneOrder = ["Pending", "Postponed", "Overdue", "Done"];
+const laneTitles = {
+  Pending: "In progress",
+  Postponed: "Moved out",
+  Overdue: "Needs action",
+  Done: "Closed",
+};
+const allowedRailPanels = new Set(["assign", "team", "whatsapp"]);
+const allowedDmModes = new Set(["text", "file", "record"]);
+
+const initialFilter = searchParams.get("filter");
+if (["all", ...laneOrder].includes(initialFilter || "")) {
+  state.filter = initialFilter;
+}
+
+function replaceUrlState(nextState) {
+  const nextParams = new URLSearchParams(window.location.search);
+
+  if (nextState.filter && nextState.filter !== "all") {
+    nextParams.set("filter", nextState.filter);
+  } else {
+    nextParams.delete("filter");
+  }
+
+  if (nextState.panel && nextState.panel !== "assign") {
+    nextParams.set("panel", nextState.panel);
+  } else {
+    nextParams.delete("panel");
+  }
+
+  if (nextState.mode && nextState.mode !== "text") {
+    nextParams.set("mode", nextState.mode);
+  } else {
+    nextParams.delete("mode");
+  }
+
+  const nextQuery = nextParams.toString();
+  const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
+  window.history.replaceState({}, "", nextUrl);
+}
+
+function buildInitials(label) {
+  return label
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase() || "WA";
+}
 
 function setRefreshStatus(message, isError = false) {
   refreshStatus.textContent = message;
@@ -71,6 +137,8 @@ function renderMembers(members) {
     const dmOption = document.createElement("option");
     dmOption.value = member.number;
     dmOption.textContent = `${member.name} (${member.number})`;
+    dmOption.dataset.name = member.name;
+    dmOption.dataset.number = member.number;
     dmRecipientSelect.appendChild(dmOption);
 
     const item = document.createElement("li");
@@ -90,17 +158,42 @@ function renderMembers(members) {
   if (members.some((member) => member.number === dmCurrentValue)) {
     dmRecipientSelect.value = dmCurrentValue;
   }
+
+  updateDmRecipientDisplay();
 }
 
 function formatDate(value) {
   if (!value) return "Not set";
-  const parts = value.split("-");
-  if (parts.length !== 3) return value;
-  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  const parsedDate = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsedDate.getTime())) return value;
+  return dateFormatter.format(parsedDate);
 }
 
 function taskMatchesFilter(task) {
   return state.filter === "all" || task.status === state.filter;
+}
+
+function createTaskCard(task) {
+  const fragment = cardTemplate.content.cloneNode(true);
+  const card = fragment.querySelector(".task-card");
+  const statusClass = `status-${task.status.toLowerCase()}`;
+  card.classList.add(statusClass);
+
+  fragment.querySelector(".status-pill").textContent = task.status;
+  fragment.querySelector(".task-row-id").textContent = task.row_id;
+  fragment.querySelector(".task-title").textContent = task.task;
+  fragment.querySelector(".assignee").textContent = `Assigned to ${task.assignee_name}`;
+  fragment.querySelector(".assign-date").textContent = formatDate(task.assign_date);
+  fragment.querySelector(".due-date").textContent = formatDate(task.due_date);
+  fragment.querySelector(".effective-date").textContent = formatDate(task.new_date || task.due_date);
+
+  const reasonNode = fragment.querySelector(".task-reason");
+  if (task.postpone_reason) {
+    reasonNode.hidden = false;
+    reasonNode.textContent = `Delay context: ${task.postpone_reason}`;
+  }
+
+  return fragment;
 }
 
 function renderTasks(tasks) {
@@ -112,27 +205,38 @@ function renderTasks(tasks) {
     return;
   }
 
-  visibleTasks.forEach((task) => {
-    const fragment = cardTemplate.content.cloneNode(true);
-    const card = fragment.querySelector(".task-card");
-    const statusClass = `status-${task.status.toLowerCase()}`;
-    card.classList.add(statusClass);
+  const visibleStatuses = state.filter === "all"
+    ? laneOrder
+    : laneOrder.filter((status) => status === state.filter);
 
-    fragment.querySelector(".status-pill").textContent = task.status;
-    fragment.querySelector(".task-row-id").textContent = task.row_id;
-    fragment.querySelector(".task-title").textContent = task.task;
-    fragment.querySelector(".assignee").textContent = `Assigned to ${task.assignee_name}`;
-    fragment.querySelector(".assign-date").textContent = formatDate(task.assign_date);
-    fragment.querySelector(".due-date").textContent = formatDate(task.due_date);
-    fragment.querySelector(".effective-date").textContent = formatDate(task.new_date || task.due_date);
+  visibleStatuses.forEach((status) => {
+    const laneTasks = visibleTasks.filter((task) => task.status === status);
+    const lane = document.createElement("section");
+    lane.className = `task-lane task-lane-${status.toLowerCase()}`;
+    lane.innerHTML = `
+      <header class="task-lane-head">
+        <div>
+          <p class="task-lane-kicker">${status}</p>
+          <h3 class="task-lane-title">${laneTitles[status]}</h3>
+        </div>
+        <span class="task-lane-count">${laneTasks.length}</span>
+      </header>
+      <div class="task-lane-list"></div>
+    `;
 
-    const reasonNode = fragment.querySelector(".task-reason");
-    if (task.postpone_reason) {
-      reasonNode.hidden = false;
-      reasonNode.textContent = `Delay context: ${task.postpone_reason}`;
+    const laneList = lane.querySelector(".task-lane-list");
+    if (laneTasks.length === 0) {
+      const emptyState = document.createElement("div");
+      emptyState.className = "task-lane-empty";
+      emptyState.textContent = "No tasks in this lane.";
+      laneList.appendChild(emptyState);
+    } else {
+      laneTasks.forEach((task) => {
+        laneList.appendChild(createTaskCard(task));
+      });
     }
 
-    taskGrid.appendChild(fragment);
+    taskGrid.appendChild(lane);
   });
 }
 
@@ -144,7 +248,7 @@ function renderSnapshot(snapshot) {
   renderTasks(snapshot.tasks);
   const generatedAt = Number.isNaN(Date.parse(snapshot.generated_at))
     ? snapshot.generated_at
-    : new Date(snapshot.generated_at).toLocaleString();
+    : dateTimeFormatter.format(new Date(snapshot.generated_at));
   snapshotMeta.textContent = `Board synced at ${generatedAt} | ${snapshot.tasks.length} tasks in timeline order`;
 }
 
@@ -212,10 +316,16 @@ async function submitTask(event) {
 
 function bindFilters() {
   filterButtons.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.filter === state.filter);
     button.addEventListener("click", () => {
       filterButtons.forEach((item) => item.classList.remove("is-active"));
       button.classList.add("is-active");
       state.filter = button.dataset.filter;
+      replaceUrlState({
+        filter: state.filter,
+        panel: document.querySelector(".rail-tab.is-active")?.dataset.railPanel || "assign",
+        mode: getActiveDmMode(),
+      });
       if (state.snapshot) {
         renderTasks(state.snapshot.tasks);
       }
@@ -223,9 +333,40 @@ function bindFilters() {
   });
 }
 
+function activateRailPanel(panelName) {
+  const targetPanel = allowedRailPanels.has(panelName) ? panelName : "assign";
+
+  railTabs.forEach((tab) => {
+    const isActive = tab.dataset.railPanel === targetPanel;
+    tab.classList.toggle("is-active", isActive);
+    tab.setAttribute("aria-selected", String(isActive));
+  });
+
+  railPanels.forEach((panel) => {
+    const isActive = panel.id === `rail-panel-${targetPanel}`;
+    panel.classList.toggle("is-active", isActive);
+    panel.hidden = !isActive;
+  });
+
+  replaceUrlState({
+    filter: state.filter,
+    panel: targetPanel,
+    mode: getActiveDmMode(),
+  });
+}
+
+function bindRailTabs() {
+  railTabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      activateRailPanel(tab.dataset.railPanel || "assign");
+    });
+  });
+}
+
 refreshButton.addEventListener("click", fetchDashboard);
 assignForm.addEventListener("submit", submitTask);
 bindFilters();
+bindRailTabs();
 fetchDashboard();
 window.setInterval(fetchDashboard, 30000);
 
@@ -248,6 +389,10 @@ const dmRecordTimer = document.getElementById("dm-record-timer");
 const dmRecordHint = document.getElementById("dm-record-hint");
 const dmSendVoice = document.getElementById("dm-send-voice");
 const dmStatus = document.getElementById("dm-status");
+const dmContactName = document.getElementById("dm-contact-name");
+const dmContactMeta = document.getElementById("dm-contact-meta");
+const dmAvatar = document.getElementById("dm-avatar");
+const dmPreviewBubble = document.getElementById("dm-preview-bubble");
 
 let dmCustomVisible = false;
 let mediaRecorder = null;
@@ -267,8 +412,90 @@ function getDmRecipient() {
   return dmRecipientSelect.value;
 }
 
+function getActiveDmMode() {
+  return dmTabs.find((tab) => tab.classList.contains("is-active"))?.dataset.mode || "text";
+}
+
+function activateDmMode(mode) {
+  const nextMode = allowedDmModes.has(mode) ? mode : "text";
+  dmTabs.forEach((tab) => {
+    const isActive = tab.dataset.mode === nextMode;
+    tab.classList.toggle("is-active", isActive);
+    tab.setAttribute("aria-selected", String(isActive));
+  });
+
+  dmTextPanel.hidden = nextMode !== "text";
+  dmFilePanel.hidden = nextMode !== "file";
+  dmRecordPanel.hidden = nextMode !== "record";
+
+  replaceUrlState({
+    filter: state.filter,
+    panel: document.querySelector(".rail-tab.is-active")?.dataset.railPanel || "assign",
+    mode: nextMode,
+  });
+  updateDmPreview();
+}
+
 function fmtRecordTime(s) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function updateDmRecipientDisplay() {
+  if (dmCustomVisible) {
+    const customNumber = dmCustomNumber.value.trim();
+    dmContactName.textContent = customNumber ? "Custom number" : "Select recipient";
+    dmContactMeta.textContent = customNumber ? `+${customNumber}` : "Enter a custom WhatsApp number";
+    dmAvatar.textContent = customNumber ? "CU" : "WA";
+    return;
+  }
+
+  const selectedOption = dmRecipientSelect.selectedOptions[0];
+  const selectedName = selectedOption?.dataset.name || "";
+  const selectedNumber = selectedOption?.dataset.number || dmRecipientSelect.value;
+
+  if (selectedName && selectedNumber) {
+    dmContactName.textContent = selectedName;
+    dmContactMeta.textContent = `+${selectedNumber}`;
+    dmAvatar.textContent = buildInitials(selectedName);
+    return;
+  }
+
+  dmContactName.textContent = "Select recipient";
+  dmContactMeta.textContent = "Choose a team member or enter a custom number";
+  dmAvatar.textContent = "WA";
+}
+
+function setDmPreview(text, placeholder = false) {
+  dmPreviewBubble.textContent = text;
+  dmPreviewBubble.classList.toggle("is-placeholder", placeholder);
+}
+
+function updateDmPreview() {
+  const mode = getActiveDmMode();
+
+  if (mode === "text") {
+    const message = dmTextInput.value.trim();
+    setDmPreview(message || "Type a message to preview it here.", !message);
+    return;
+  }
+
+  if (mode === "file") {
+    const file = dmFileInput.files[0];
+    const caption = dmCaptionInput.value.trim();
+    if (!file) {
+      setDmPreview("Attach an image, document, audio, or video file.", true);
+      return;
+    }
+    setDmPreview(caption ? `${file.name}\n${caption}` : file.name);
+    return;
+  }
+
+  if (!recordedBlob) {
+    setDmPreview("Record a voice note to preview it here.", true);
+    return;
+  }
+
+  setDmPreview(`Voice note ready · ${fmtRecordTime(recordSeconds)}`);
 }
 
 dmToggleCustom.addEventListener("click", () => {
@@ -280,20 +507,21 @@ dmToggleCustom.addEventListener("click", () => {
   } else {
     dmCustomNumber.value = "";
   }
+  updateDmRecipientDisplay();
 });
 
 dmTabs.forEach((tab) => {
   tab.addEventListener("click", () => {
-    dmTabs.forEach((t) => { t.classList.remove("is-active"); t.setAttribute("aria-selected", "false"); });
-    tab.classList.add("is-active");
-    tab.setAttribute("aria-selected", "true");
-    const mode = tab.dataset.mode;
-    dmTextPanel.hidden = mode !== "text";
-    dmFilePanel.hidden = mode !== "file";
-    dmRecordPanel.hidden = mode !== "record";
+    activateDmMode(tab.dataset.mode || "text");
     setDmStatus("");
   });
 });
+
+dmRecipientSelect.addEventListener("change", updateDmRecipientDisplay);
+dmCustomNumber.addEventListener("input", updateDmRecipientDisplay);
+dmTextInput.addEventListener("input", updateDmPreview);
+dmFileInput.addEventListener("change", updateDmPreview);
+dmCaptionInput.addEventListener("input", updateDmPreview);
 
 dmSendText.addEventListener("click", async () => {
   const to = getDmRecipient();
@@ -313,6 +541,7 @@ dmSendText.addEventListener("click", async () => {
     }
     dmTextInput.value = "";
     setDmStatus("Message sent.", "success");
+    updateDmPreview();
   } catch (err) {
     setDmStatus(err.message || "Send failed.", "error");
   }
@@ -337,6 +566,7 @@ dmSendFile.addEventListener("click", async () => {
     dmFileInput.value = "";
     dmCaptionInput.value = "";
     setDmStatus("File sent.", "success");
+    updateDmPreview();
   } catch (err) {
     setDmStatus(err.message || "Upload failed.", "error");
   }
@@ -371,10 +601,12 @@ dmRecordBtn.addEventListener("click", async () => {
       dmRecordHint.textContent = `Recorded ${fmtRecordTime(recordSeconds)}. Ready to send.`;
       dmSendVoice.hidden = false;
       dmRecordTimer.hidden = true;
+      updateDmPreview();
     };
     mediaRecorder.start();
     dmRecordBtn.innerHTML = '<span class="record-dot recording"></span>Stop';
     dmRecordHint.textContent = "Recording...";
+    updateDmPreview();
   } catch {
     setDmStatus("Microphone access denied.", "error");
   }
@@ -403,7 +635,12 @@ dmSendVoice.addEventListener("click", async () => {
     dmRecordTimer.hidden = true;
     dmRecordBtn.innerHTML = '<span class="record-dot"></span>Record';
     setDmStatus("Voice note sent.", "success");
+    updateDmPreview();
   } catch (err) {
     setDmStatus(err.message || "Send failed.", "error");
   }
 });
+
+updateDmRecipientDisplay();
+activateRailPanel(searchParams.get("panel") || "assign");
+activateDmMode(searchParams.get("mode") || "text");

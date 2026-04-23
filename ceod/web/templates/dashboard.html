@@ -22,46 +22,24 @@
     data-task-url="{{ api_task_url }}"
   >
     <a class="skip-link" href="#main-content">Skip to content</a>
-    <div class="page-shell">
-      <header class="app-bar">
-        <div class="app-bar-copy">
+    <div class="page-shell dashboard-shell">
+      <header class="topbar">
+        <div class="topbar-brand">
           <p class="eyebrow">CEO Mission Control</p>
-          <h1 class="app-title">Operations dashboard</h1>
-          <p class="app-subtitle">
-            Live task routing, board visibility, and direct WhatsApp actions.
-          </p>
+          <h1 class="topbar-title">Live operations</h1>
+          <p class="topbar-text">Task routing, follow-up visibility, and WhatsApp actions in one board.</p>
         </div>
-        <div class="app-bar-actions">
-          <a class="ghost-button" href="/chat">Open chats</a>
-          <button id="refresh-button" class="ghost-button" type="button">
-            Refresh Board
-          </button>
-        </div>
-      </header>
-
-      <section class="hero" aria-labelledby="hero-title">
-        <div class="hero-copy">
-          <p class="eyebrow">Mission Board</p>
-          <h2 id="hero-title">See the work. Steer the team.</h2>
-          <p class="hero-text">
-            Review active work, catch overdue tasks, and assign new asks from one calm surface.
-          </p>
-        </div>
-        <div class="hero-actions">
-          <div class="hero-note">
-            <p class="hero-note-kicker">Clean flow</p>
-            <ul class="hero-note-list">
-              <li>Assign work without leaving the board</li>
-              <li>Track due, overdue, and done states fast</li>
-              <li>Message the team from the same workspace</li>
-            </ul>
-          </div>
+        <div class="topbar-actions">
           <div class="pulse-wrap" aria-live="polite">
             <span class="pulse-dot"></span>
             <span id="refresh-status">Live sync active</span>
           </div>
+          <a class="ghost-button" href="/chat">Open chats</a>
+          <button id="refresh-button" class="submit-button topbar-refresh" type="button">
+            Refresh Board
+          </button>
         </div>
-      </section>
+      </header>
 
       <main id="main-content" class="dashboard-layout">
         <section class="assign-panel" aria-labelledby="assign-panel-title">
@@ -69,131 +47,247 @@
             <p class="panel-kicker">Command Deck</p>
             <h2 id="assign-panel-title">Assign work</h2>
             <p class="panel-text">
-              Create a task, route it to the right person, and keep the board current.
+              Push a task to the team, update the board, and message people without switching tools.
             </p>
           </div>
-          <form id="assign-form" class="assign-form">
-            <label class="field">
-              <span>Assign to</span>
-              <select id="assignee-select" name="assignee" required>
-                <option value="">Select a team member</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>Task</span>
-              <textarea
-                id="task-input"
-                name="task"
-                rows="5"
-                maxlength="500"
-                placeholder="Example: Finalize the vendor deck and send the revised version before 6 PM."
-                required
-              ></textarea>
-            </label>
-
-            <label class="field">
-              <span>Due date</span>
-              <input id="due-date-input" name="due_date" type="date" />
-            </label>
-
-            <button class="submit-button" type="submit">Assign Task</button>
-            <p id="form-status" class="form-status" aria-live="polite"></p>
-          </form>
-
-          <section class="roster-card" aria-labelledby="roster-title">
-            <div class="panel-head compact">
-              <p class="panel-kicker">Roster</p>
-              <h3 id="roster-title">Active team members</h3>
-            </div>
-            <ul id="member-roster" class="member-roster"></ul>
-          </section>
-
-          <section class="dm-card" aria-labelledby="dm-title">
-            <div class="panel-head compact">
-              <p class="panel-kicker">Direct Message</p>
-              <h3 id="dm-title">Send to WhatsApp</h3>
-            </div>
-
-            <label class="field">
-              <span>Recipient</span>
-              <select id="dm-recipient-select">
-                <option value="">Select team member</option>
-              </select>
-            </label>
-            <div id="dm-custom-wrap" hidden>
-              <label class="field">
-                <span>Custom number</span>
-                <input id="dm-custom-number" type="tel" placeholder="e.g. 919876543210" />
-              </label>
-            </div>
-            <button type="button" id="dm-toggle-custom" class="ghost-button dm-toggle-btn">
-              + Custom number
+          <div class="rail-tabs" role="tablist" aria-label="Command panels">
+            <button
+              id="rail-tab-assign"
+              class="rail-tab is-active"
+              type="button"
+              data-rail-panel="assign"
+              role="tab"
+              aria-selected="true"
+            >
+              Assign
             </button>
+            <button
+              id="rail-tab-team"
+              class="rail-tab"
+              type="button"
+              data-rail-panel="team"
+              role="tab"
+              aria-selected="false"
+            >
+              Team
+            </button>
+            <button
+              id="rail-tab-whatsapp"
+              class="rail-tab"
+              type="button"
+              data-rail-panel="whatsapp"
+              role="tab"
+              aria-selected="false"
+            >
+              WhatsApp
+            </button>
+          </div>
 
-            <div class="dm-tabs" role="tablist" aria-label="Message type">
-              <button class="dm-tab is-active" type="button" data-mode="text" role="tab" aria-selected="true">
-                Text
-              </button>
-              <button class="dm-tab" type="button" data-mode="file" role="tab" aria-selected="false">
-                Image / File
-              </button>
-              <button class="dm-tab" type="button" data-mode="record" role="tab" aria-selected="false">
-                Voice Note
-              </button>
-            </div>
+          <div class="rail-panel-stack">
+            <section
+              id="rail-panel-assign"
+              class="rail-panel is-active"
+              role="tabpanel"
+              aria-labelledby="rail-tab-assign"
+            >
+          <form id="assign-form" class="assign-form" autocomplete="off">
+                <label class="field">
+                  <span>Assign to</span>
+                  <select id="assignee-select" name="assignee" autocomplete="off" required>
+                    <option value="">Select a team member</option>
+                  </select>
+                </label>
 
-            <div id="dm-text-panel">
-              <label class="field">
-                <span>Message</span>
-                <textarea id="dm-text-input" rows="3" maxlength="4000" placeholder="Type a message..."></textarea>
-              </label>
-              <button type="button" id="dm-send-text" class="submit-button">Send</button>
-            </div>
+                <label class="field">
+                  <span>Task</span>
+                  <textarea
+                    id="task-input"
+                    name="task"
+                    rows="5"
+                    maxlength="500"
+                    placeholder="Example: Finalize the vendor deck and send the revised version before 6 PM…"
+                    required
+                  ></textarea>
+                </label>
 
-            <div id="dm-file-panel" hidden>
-              <label class="field">
-                <span>File (image, audio, video, document)</span>
-                <input
-                  id="dm-file-input"
-                  type="file"
-                  class="file-input"
-                  accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
-                />
-              </label>
-              <label class="field">
-                <span>Caption (optional)</span>
-                <input id="dm-caption-input" type="text" maxlength="1024" placeholder="Add a caption..." />
-              </label>
-              <button type="button" id="dm-send-file" class="submit-button">Send File</button>
-            </div>
+                <label class="field">
+                  <span>Due date</span>
+                  <input id="due-date-input" name="due_date" type="date" autocomplete="off" />
+                </label>
 
-            <div id="dm-record-panel" hidden>
-              <div class="recorder-row">
-                <button type="button" id="dm-record-btn" class="record-btn">
-                  <span class="record-dot"></span>Record
-                </button>
-                <span id="dm-record-timer" class="record-timer" hidden>0:00</span>
-              </div>
-              <p id="dm-record-hint" class="record-hint">Press record, speak, then stop.</p>
-              <button type="button" id="dm-send-voice" class="submit-button" hidden>Send Voice Note</button>
-            </div>
+                <button class="submit-button" type="submit">Assign Task</button>
+                <p id="form-status" class="form-status" aria-live="polite"></p>
+              </form>
+            </section>
 
-            <p id="dm-status" class="form-status" aria-live="polite"></p>
-          </section>
+            <section
+              id="rail-panel-team"
+              class="rail-panel"
+              role="tabpanel"
+              aria-labelledby="rail-tab-team"
+              hidden
+            >
+              <section class="roster-card" aria-labelledby="roster-title">
+                <div class="panel-head compact">
+                  <p class="panel-kicker">Roster</p>
+                  <h3 id="roster-title">Active team members</h3>
+                </div>
+                <ul id="member-roster" class="member-roster"></ul>
+              </section>
+            </section>
+
+            <section
+              id="rail-panel-whatsapp"
+              class="rail-panel"
+              role="tabpanel"
+              aria-labelledby="rail-tab-whatsapp"
+              hidden
+            >
+              <section class="dm-card whatsapp-card" aria-labelledby="dm-title">
+                <div class="panel-head compact">
+                  <p class="panel-kicker">Direct Message</p>
+                  <h3 id="dm-title">Send to WhatsApp</h3>
+                </div>
+
+                <div class="whatsapp-shell">
+                  <div class="whatsapp-topbar">
+                    <div class="whatsapp-contact">
+                      <div id="dm-avatar" class="whatsapp-avatar">WA</div>
+                      <div class="whatsapp-contact-copy">
+                        <strong id="dm-contact-name">Select recipient</strong>
+                        <span id="dm-contact-meta">Choose a team member or enter a custom number</span>
+                      </div>
+                    </div>
+                    <span class="whatsapp-chip">WhatsApp</span>
+                  </div>
+
+                  <div class="whatsapp-toolbar">
+                      <label class="field">
+                        <span>Recipient</span>
+                        <select id="dm-recipient-select" name="dm_recipient" autocomplete="off">
+                          <option value="">Select team member</option>
+                        </select>
+                      </label>
+                    <div id="dm-custom-wrap" hidden>
+                      <label class="field">
+                        <span>Custom number</span>
+                        <input
+                          id="dm-custom-number"
+                          name="dm_custom_number"
+                          type="tel"
+                          inputmode="tel"
+                          autocomplete="off"
+                          placeholder="e.g. 919876543210…"
+                        />
+                      </label>
+                    </div>
+                    <button type="button" id="dm-toggle-custom" class="ghost-button dm-toggle-btn">
+                      + Custom number
+                    </button>
+                  </div>
+
+                  <div class="whatsapp-thread">
+                    <span class="whatsapp-day-chip">Today</span>
+                    <div class="whatsapp-message incoming">
+                      Use text, file, or voice to send directly from mission control.
+                    </div>
+                    <div id="dm-preview-bubble" class="whatsapp-message outgoing is-placeholder">
+                      Type a message to preview it here.
+                    </div>
+                  </div>
+
+                  <div class="whatsapp-compose">
+                    <div class="dm-tabs" role="tablist" aria-label="Message type">
+                      <button class="dm-tab is-active" type="button" data-mode="text" role="tab" aria-selected="true">
+                        Text
+                      </button>
+                      <button class="dm-tab" type="button" data-mode="file" role="tab" aria-selected="false">
+                        Image / File
+                      </button>
+                      <button class="dm-tab" type="button" data-mode="record" role="tab" aria-selected="false">
+                        Voice Note
+                      </button>
+                    </div>
+
+                    <div id="dm-text-panel" class="whatsapp-compose-panel">
+                      <label class="field">
+                        <span>Message</span>
+                        <textarea
+                          id="dm-text-input"
+                          name="dm_text"
+                          rows="3"
+                          maxlength="4000"
+                          autocomplete="off"
+                          placeholder="Type a message…"
+                        ></textarea>
+                      </label>
+                      <div class="whatsapp-action-row">
+                        <span class="whatsapp-action-label">Text message</span>
+                        <button type="button" id="dm-send-text" class="submit-button whatsapp-send-button">Send</button>
+                      </div>
+                    </div>
+
+                    <div id="dm-file-panel" class="whatsapp-compose-panel" hidden>
+                      <label class="field">
+                        <span>Attachment</span>
+                        <input
+                          id="dm-file-input"
+                          name="dm_file"
+                          type="file"
+                          class="file-input"
+                          accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
+                        />
+                      </label>
+                      <label class="field">
+                        <span>Caption (optional)</span>
+                        <input
+                          id="dm-caption-input"
+                          name="dm_caption"
+                          type="text"
+                          maxlength="1024"
+                          autocomplete="off"
+                          placeholder="Add a caption…"
+                        />
+                      </label>
+                      <div class="whatsapp-action-row">
+                        <span class="whatsapp-action-label">Image, document, audio, or video</span>
+                        <button type="button" id="dm-send-file" class="submit-button whatsapp-send-button">Send</button>
+                      </div>
+                    </div>
+
+                    <div id="dm-record-panel" class="whatsapp-compose-panel" hidden>
+                      <div class="recorder-row">
+                        <button type="button" id="dm-record-btn" class="record-btn">
+                          <span class="record-dot"></span>Record
+                        </button>
+                        <span id="dm-record-timer" class="record-timer" hidden>0:00</span>
+                      </div>
+                      <p id="dm-record-hint" class="record-hint">Press record, speak, then stop.</p>
+                      <div class="whatsapp-action-row">
+                        <span class="whatsapp-action-label">Voice note</span>
+                        <button type="button" id="dm-send-voice" class="submit-button whatsapp-send-button" hidden>
+                          Send
+                        </button>
+                      </div>
+                    </div>
+
+                    <p id="dm-status" class="form-status" aria-live="polite"></p>
+                  </div>
+                </div>
+              </section>
+            </section>
+          </div>
         </section>
 
-        <section class="board-panel" aria-labelledby="board-panel-title">
-          <div class="board-head">
-            <div>
-              <p class="panel-kicker">Operations View</p>
-              <h2 id="board-panel-title">Task board</h2>
-              <p class="panel-text">
-                A single view for current workload, follow-up pressure, and completed work.
-              </p>
+        <section class="workspace-panel">
+          <section class="workspace-header" aria-labelledby="board-panel-title">
+            <div class="workspace-copy">
+              <p class="panel-kicker">Board Overview</p>
+              <h2 id="board-panel-title">Current workflow</h2>
+              <p class="panel-text">A tighter operations board with less chrome and faster scan value.</p>
             </div>
             <p id="snapshot-meta" class="snapshot-meta">Awaiting first sync...</p>
-          </div>
+          </section>
 
           <section class="stats-grid" aria-label="Task summary">
             <article class="stat-card stat-card-primary">
@@ -228,23 +322,34 @@
             </article>
           </section>
 
-          <div class="toolbar">
-            <div class="filter-row" role="group" aria-label="Task filters">
-              <button class="filter-chip is-active" type="button" data-filter="all">All</button>
-              <button class="filter-chip" type="button" data-filter="Pending">Pending</button>
-              <button class="filter-chip" type="button" data-filter="Postponed">Postponed</button>
-              <button class="filter-chip" type="button" data-filter="Overdue">Overdue</button>
-              <button class="filter-chip" type="button" data-filter="Done">Done</button>
+          <section class="board-panel" aria-label="Task lanes">
+            <div class="board-toolbar">
+              <div class="board-head">
+                <div>
+                  <p class="panel-kicker">Task Lanes</p>
+                  <h3 class="board-title">Live board</h3>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div id="task-error" class="board-message board-message-error" hidden>
-            The board could not load. Check the API and refresh.
-          </div>
-          <div id="task-empty" class="board-message" hidden>
-            No tasks match the current filter.
-          </div>
-          <div id="task-grid" class="task-grid" aria-live="polite"></div>
+            <div class="toolbar">
+              <div class="filter-row" role="group" aria-label="Task filters">
+                <button class="filter-chip is-active" type="button" data-filter="all">All</button>
+                <button class="filter-chip" type="button" data-filter="Pending">Pending</button>
+                <button class="filter-chip" type="button" data-filter="Postponed">Postponed</button>
+                <button class="filter-chip" type="button" data-filter="Overdue">Overdue</button>
+                <button class="filter-chip" type="button" data-filter="Done">Done</button>
+              </div>
+            </div>
+
+            <div id="task-error" class="board-message board-message-error" hidden>
+              The board could not load. Check the API and refresh.
+            </div>
+            <div id="task-empty" class="board-message" hidden>
+              No tasks match the current filter.
+            </div>
+            <div id="task-grid" class="task-grid" aria-live="polite"></div>
+          </section>
         </section>
       </main>
     </div>
