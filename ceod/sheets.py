@@ -213,20 +213,7 @@ class GoogleSheetsRepository:
     for row in rows:
       if self._is_valid_master_row(row) and row[MasterCol.ROW_ID - 1] == row_id:
         return self._task_from_master_row(row)
-    self._logger.warning(
-      "get_task_by_row_id: %s not found. Master has %d rows, %d valid data rows.",
-      row_id,
-      len(rows),
-      sum(1 for r in rows if self._is_valid_master_row(r)),
-    )
-    for i, row in enumerate(rows):
-      self._logger.warning(
-        "  row[%d] len=%d col12=%r valid=%s",
-        i,
-        len(row),
-        row[MasterCol.ROW_ID - 1] if len(row) >= MasterCol.ROW_ID else "<short>",
-        self._is_valid_master_row(row),
-      )
+    self._logger.warning("get_task_by_row_id: %s not found in Master sheet", row_id)
     return None
 
   def get_latest_pending_task_for_number(self, number: str) -> TaskRecord | None:

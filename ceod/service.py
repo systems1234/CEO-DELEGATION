@@ -300,7 +300,11 @@ class TaskDelegationService:
     )
 
   def _send(self, to_number: str, body: str, name: str = "") -> None:
-    self._whatsapp.send_text(to_number, body)
+    try:
+      self._whatsapp.send_text(to_number, body)
+    except Exception as exc:
+      self._logger.warning("WhatsApp send to %s failed: %s", to_number, exc)
+      return
     try:
       ts = timezone_now(self._timezone_name).isoformat(timespec="seconds")
       self._repository.log_message(ts, "out", to_number, name or to_number, body)
