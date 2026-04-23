@@ -37,6 +37,8 @@ class OpenAIMessageParser:
     system_prompt = (
       "You are a task extraction assistant for an Indian business WhatsApp group. "
       "The CEO sends task assignments in Hindi, Hinglish, or English. "
+      "The input may be a direct text message, a voice-note transcription, or OCR/plain-text extracted from an image. "
+      "The text may contain minor transcription or OCR errors, but you should still identify clear task assignments when possible. "
       "Extract the assignment details and return only valid JSON.\n\n"
       f"Known team member names: {json.dumps(known_names)}\n\n"
       "Return this exact JSON shape:\n"
@@ -125,4 +127,3 @@ class OpenAIMessageParser:
     except (KeyError, IndexError, TypeError, ValueError) as exc:
       self._logger.exception("Failed to parse OpenAI response")
       raise ExternalServiceError("OpenAI returned an invalid response payload") from exc
-
