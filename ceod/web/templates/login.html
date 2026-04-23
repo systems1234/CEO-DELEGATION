@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in — CEO Mission Control</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      *, *::before, *::after { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "IBM Plex Sans", sans-serif;
+        color: #171411;
+        background:
+          radial-gradient(circle at top left, rgba(31,107,93,0.12), transparent 28%),
+          radial-gradient(circle at bottom right, rgba(181,106,58,0.10), transparent 26%),
+          linear-gradient(180deg, #f7f4ef 0%, #f1ece5 100%);
+      }
+
+      .login-card {
+        width: min(420px, calc(100vw - 32px));
+        padding: 40px 36px;
+        background: rgba(255,255,255,0.92);
+        border: 1px solid rgba(24,21,18,0.11);
+        border-radius: 28px;
+        box-shadow: 0 24px 72px rgba(24,21,18,0.09);
+        -webkit-backdrop-filter: blur(18px);
+        backdrop-filter: blur(18px);
+      }
+
+      .login-eyebrow {
+        margin: 0 0 6px;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #b56a3a;
+      }
+
+      .login-title {
+        margin: 0 0 6px;
+        font-family: "Bricolage Grotesque", sans-serif;
+        font-size: 1.8rem;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        color: #171411;
+      }
+
+      .login-sub {
+        margin: 0 0 28px;
+        font-size: 0.88rem;
+        color: #615950;
+        line-height: 1.5;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 14px;
+      }
+
+      .field span {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #615950;
+      }
+
+      .field input {
+        width: 100%;
+        padding: 11px 14px;
+        font: inherit;
+        font-size: 0.92rem;
+        background: #f7f4ef;
+        border: 1px solid rgba(24,21,18,0.14);
+        border-radius: 12px;
+        outline: none;
+        color: #171411;
+        transition: border-color 0.15s;
+      }
+
+      .field input:focus {
+        border-color: #1f6b5d;
+        background: #fff;
+      }
+
+      .login-btn {
+        width: 100%;
+        margin-top: 8px;
+        padding: 13px;
+        font: inherit;
+        font-size: 0.92rem;
+        font-weight: 600;
+        background: #1f6b5d;
+        color: #fff;
+        border: none;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: background 0.15s, transform 0.12s;
+      }
+
+      .login-btn:hover { background: #15463d; transform: translateY(-1px); }
+      .login-btn:active { transform: none; }
+
+      .login-error {
+        margin: 14px 0 0;
+        padding: 11px 14px;
+        background: rgba(162,63,49,0.08);
+        border: 1px solid rgba(162,63,49,0.18);
+        border-radius: 10px;
+        font-size: 0.84rem;
+        color: #a23f31;
+        display: none;
+      }
+
+      .login-error.is-visible { display: block; }
+    </style>
+  </head>
+  <body>
+    <div class="login-card">
+      <p class="login-eyebrow">CEO Mission Control</p>
+      <h1 class="login-title">Sign in</h1>
+      <p class="login-sub">Enter your credentials to access the dashboard.</p>
+
+      <form method="post" action="/login">
+        <input type="hidden" name="next" value="{{ next }}" />
+        <label class="field">
+          <span>Username</span>
+          <input type="text" name="username" autocomplete="username" autofocus required />
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input type="password" name="password" autocomplete="current-password" required />
+        </label>
+        <button class="login-btn" type="submit">Sign in</button>
+        {% if error %}
+        <p class="login-error is-visible">{{ error }}</p>
+        {% endif %}
+      </form>
+    </div>
+  </body>
+</html>

@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-import base64
-import binascii
 import hmac
 import json
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 
 from ceod.config import Settings
@@ -31,7 +31,8 @@ LOGGER = logging.getLogger(__name__)
 WEB_ROOT = Path(__file__).resolve().parent / "web"
 TEMPLATES = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 PROTECTED_DASHBOARD_PATHS = frozenset({"/", "/chat", "/api/dashboard", "/api/tasks", "/api/chats", "/api/send", "/api/send-media", "/api/members"})
-AUTH_CHALLENGE_HEADER = 'Basic realm="CEO Mission Control", charset="UTF-8"'
+SESSION_COOKIE = "ceod_session"
+SESSION_MAX_AGE = 60 * 60 * 24  # 24 hours
 
 
 class TaskCreatePayload(BaseModel):
@@ -85,13 +86,51 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
   @app.middleware("http")
   async def protect_dashboard_routes(request: Request, call_next):
     if _is_protected_dashboard_path(request.url.path):
-      auth_failure = _validate_dashboard_access(request, app.state.container.settings)
-      if auth_failure is not None:
-        return auth_failure
+      settings = app.state.container.settings
+      if getattr(settings, "dashboard_auth_enabled", False):
+        if not _has_valid_session(request, settings):
+          next_url = request.url.path
+          return RedirectResponse(url=f"/login?next={next_url}", status_code=302)
 
     response = await call_next(request)
     if _is_protected_dashboard_path(request.url.path):
       response.headers["Cache-Control"] = "no-store"
+    return response
+
+  @app.get("/login", response_class=HTMLResponse)
+  def login_page(request: Request, next: str = "/") -> HTMLResponse:
+    return TEMPLATES.TemplateResponse(
+      request=request, name="login.html", context={"next": next, "error": ""},
+    )
+
+  @app.post("/login")
+  async def login_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    next: str = Form(default="/"),
+  ) -> Response:
+    settings = app.state.container.settings
+    if not _credentials_valid(username, password, settings):
+      return TEMPLATES.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={"next": next, "error": "Incorrect username or password."},
+        status_code=401,
+      )
+    token = _make_session_token(username, settings)
+    safe_next = next if next.startswith("/") else "/"
+    response = RedirectResponse(url=safe_next, status_code=302)
+    response.set_cookie(
+      SESSION_COOKIE, token,
+      max_age=SESSION_MAX_AGE, httponly=True, samesite="lax",
+    )
+    return response
+
+  @app.get("/logout")
+  def logout() -> Response:
+    response = RedirectResponse(url="/login", status_code=302)
+    response.delete_cookie(SESSION_COOKIE)
     return response
 
   @app.get("/healthz")
@@ -301,51 +340,35 @@ def _is_protected_dashboard_path(path: str) -> bool:
   return path in PROTECTED_DASHBOARD_PATHS
 
 
-def _validate_dashboard_access(request: Request, settings: Any) -> PlainTextResponse | None:
-  if not getattr(settings, "dashboard_auth_enabled", False):
-    return None
-
-  auth_header = request.headers.get("Authorization")
-  credentials = _decode_basic_auth(auth_header)
-  expected_username = getattr(settings, "dashboard_username", None)
-  expected_password = getattr(settings, "dashboard_password", None)
-  if not credentials or not expected_username or not expected_password:
-    return _unauthorized_response()
-
-  username, password = credentials
-  if not (
-    hmac.compare_digest(username, expected_username)
-    and hmac.compare_digest(password, expected_password)
-  ):
-    return _unauthorized_response()
-  return None
+def _get_serializer(settings: Any) -> URLSafeTimedSerializer:
+  secret = getattr(settings, "session_secret", None) or "ceod-fallback-secret-change-me"
+  return URLSafeTimedSerializer(secret, salt="ceod-session")
 
 
-def _decode_basic_auth(auth_header: str | None) -> tuple[str, str] | None:
-  if not auth_header:
-    return None
+def _make_session_token(username: str, settings: Any) -> str:
+  return _get_serializer(settings).dumps(username)
 
-  scheme, _, token = auth_header.partition(" ")
-  if scheme.lower() != "basic" or not token:
-    return None
 
+def _has_valid_session(request: Request, settings: Any) -> bool:
+  token = request.cookies.get(SESSION_COOKIE)
+  if not token:
+    return False
   try:
-    raw_credentials = base64.b64decode(token, validate=True).decode("utf-8")
-  except (binascii.Error, UnicodeDecodeError):
-    return None
-
-  username, separator, password = raw_credentials.partition(":")
-  if not separator:
-    return None
-  return username, password
+    _get_serializer(settings).loads(token, max_age=SESSION_MAX_AGE)
+    return True
+  except (SignatureExpired, BadSignature):
+    return False
 
 
-def _unauthorized_response() -> PlainTextResponse:
-  return PlainTextResponse(
-    "Authentication required",
-    status_code=401,
-    headers={
-      "WWW-Authenticate": AUTH_CHALLENGE_HEADER,
-      "Cache-Control": "no-store",
-    },
+def _credentials_valid(username: str, password: str, settings: Any) -> bool:
+  pairs: list[tuple[str, str]] = []
+  u, p = getattr(settings, "dashboard_username", None), getattr(settings, "dashboard_password", None)
+  if u and p:
+    pairs.append((u, p))
+  du, dp = getattr(settings, "dev_username", None), getattr(settings, "dev_password", None)
+  if du and dp:
+    pairs.append((du, dp))
+  return any(
+    hmac.compare_digest(username, eu) and hmac.compare_digest(password, ep)
+    for eu, ep in pairs
   )

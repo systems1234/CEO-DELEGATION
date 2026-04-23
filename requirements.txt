@@ -10,3 +10,4 @@ pydantic-settings
 uvicorn==0.34.0
 gunicorn
 python-multipart
+itsdangerous==2.2.0

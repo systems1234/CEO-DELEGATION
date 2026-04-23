@@ -46,6 +46,9 @@ class Settings(BaseSettings):
   dashboard_auth_enabled: bool = Field(default=True, alias="DASHBOARD_AUTH_ENABLED")
   dashboard_username: str | None = Field(default=None, alias="DASHBOARD_USERNAME")
   dashboard_password: str | None = Field(default=None, alias="DASHBOARD_PASSWORD")
+  dev_username: str | None = Field(default=None, alias="DEV_USERNAME")
+  dev_password: str | None = Field(default=None, alias="DEV_PASSWORD")
+  session_secret: str | None = Field(default=None, alias="SESSION_SECRET")
 
   scheduler_enabled: bool = Field(default=False, alias="SCHEDULER_ENABLED")
   scheduler_hour_ist: int = Field(default=9, alias="SCHEDULER_HOUR_IST")
