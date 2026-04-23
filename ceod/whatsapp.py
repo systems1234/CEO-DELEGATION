@@ -442,13 +442,13 @@ class GreenAPIWhatsAppGateway(_InboundMediaAnalysisMixin):
       text = self._transcribe_voice_note(chat_id, id_message)
       self._logger.info("GREEN_API transcription result=%r", text[:120])
     elif message_type == "imageMessage":
-      self._logger.info("GREEN_API image message - extracting text")
-      text = self._extract_greenapi_image_text(chat_id, id_message, message_data)
-      self._logger.info("GREEN_API image extracted text=%r", text[:120])
+      caption = self._extract_greenapi_image_caption(message_data).strip()
+      self._logger.info("GREEN_API image message - caption only=%r", caption[:120])
+      text = caption
     elif message_type == "videoMessage":
-      self._logger.info("GREEN_API video message - extracting text")
-      text = self._extract_greenapi_video_text(chat_id, id_message, message_data)
-      self._logger.info("GREEN_API video extracted text=%r", text[:120])
+      caption = self._extract_greenapi_media_caption(message_data).strip()
+      self._logger.info("GREEN_API video message - caption only=%r", caption[:120])
+      text = caption
     else:
       self._logger.info("GREEN_API ignoring unsupported messageType=%s", message_type)
       return None

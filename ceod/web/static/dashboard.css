@@ -57,6 +57,7 @@ body::before {
     linear-gradient(rgba(23, 20, 17, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(23, 20, 17, 0.03) 1px, transparent 1px);
   background-size: 32px 32px;
+  -webkit-mask-image: radial-gradient(circle at center, black, transparent 82%);
   mask-image: radial-gradient(circle at center, black, transparent 82%);
 }
 
@@ -98,6 +99,7 @@ a {
   border-radius: var(--radius-xl);
   background: var(--surface);
   box-shadow: var(--shadow-lg);
+  -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
 }
 
@@ -1015,7 +1017,7 @@ a {
 
   .chat-sidebar,
   .chat-main {
-    min-height: auto;
+    min-height: 0;
   }
 
   .chat-sidebar {
@@ -1091,6 +1093,7 @@ a {
   border-radius: var(--radius-xl);
   background: rgba(255, 255, 255, 0.9);
   box-shadow: var(--shadow-lg);
+  -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
 }
 
@@ -1104,6 +1107,7 @@ a {
   font-size: clamp(1.7rem, 3vw, 2.5rem);
   font-weight: 800;
   letter-spacing: -0.03em;
+  overflow-wrap: break-word;
   text-wrap: balance;
 }
 
@@ -1157,6 +1161,7 @@ a {
   font-weight: 800;
   letter-spacing: -0.03em;
   line-height: 1;
+  overflow-wrap: break-word;
   text-wrap: balance;
 }
 
