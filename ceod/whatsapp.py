@@ -472,6 +472,9 @@ class GreenAPIWhatsAppGateway(_InboundMediaAnalysisMixin):
       self._logger.info("GREEN_API video message - transcribing")
       text = self._extract_greenapi_video_text(chat_id, id_message, message_data)
       self._logger.info("GREEN_API video extracted text=%r", text[:120])
+    elif message_type in {"documentMessage", "fileMessage"}:
+      text = _clean_media_caption(self._extract_greenapi_media_caption(message_data))
+      self._logger.info("GREEN_API document/file message - caption=%r", text[:120])
     else:
       self._logger.info("GREEN_API ignoring unsupported messageType=%s", message_type)
       return None
