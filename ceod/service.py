@@ -66,6 +66,7 @@ class TaskDelegationService:
     except Exception:
       self._logger.warning("Failed to log incoming message from %s", message.from_number)
 
+    self._logger.info("MSG in from=%s text=%r", message.from_number, message.text[:60])
     if message.from_number == self._ceo_number:
       self._handle_ceo_message(message.text)
       return
@@ -74,11 +75,13 @@ class TaskDelegationService:
   def daily_follow_up_check(self) -> None:
     today = today_iso(self._timezone_name)
     due_tasks = self._repository.get_tasks_due_today(today)
+    self._logger.info("Daily check: %d due today", len(due_tasks))
     for task in due_tasks:
       self._send_follow_up(task)
 
     overdue_tasks = self._repository.mark_overdue_tasks(today)
     if overdue_tasks:
+      self._logger.info("Marked %d task(s) overdue", len(overdue_tasks))
       self._notify_overdue_tasks(overdue_tasks)
 
   def get_chat_log(self) -> list[dict[str, str]]:
@@ -121,6 +124,7 @@ class TaskDelegationService:
     )
     task_date = today_iso(self._timezone_name)
     row_id = self._repository.create_task(parsed, task_date)
+    self._logger.info("Task created ref=%s assignee=%s", row_id, member.name)
     created_task = TaskRecord(
       row_id=row_id,
       assignee_name=member.name,
@@ -224,6 +228,7 @@ class TaskDelegationService:
         return
       self._repository.commit_task_due_date(target_row_id, committed_date)
       self._repository.clear_pending_commitment(from_number)
+      self._logger.info("Commitment ref=%s due=%s assignee=%s", target_row_id, committed_date, task.assignee_name)
       self._send(
         from_number,
         f"Got it! I'll follow up on {format_date_for_display(committed_date)}.\n\nRef: {target_row_id}",
@@ -257,6 +262,7 @@ class TaskDelegationService:
 
       self._repository.postpone_task(target_row_id, parsed.new_date, parsed.reason)
       self._repository.clear_pending_postpone(from_number)
+      self._logger.info("Postponed ref=%s new_date=%s assignee=%s", target_row_id, parsed.new_date, task.assignee_name)
       self._send(
         from_number,
         f"Got it. Task rescheduled to {format_date_for_display(parsed.new_date)}.",
@@ -288,6 +294,7 @@ class TaskDelegationService:
   def _process_done_reply(self, from_number: str, task: TaskRecord) -> None:
     completion_date = today_iso(self._timezone_name)
     self._repository.mark_task_done(task.row_id, completion_date)
+    self._logger.info("Done ref=%s assignee=%s", task.row_id, task.assignee_name)
     self._send(from_number, "Task marked as Done. Great work.", name=task.assignee_name)
     self._notify_ceo(
       (
