@@ -1,13 +1,12 @@
-apscheduler==3.10.4
 fastapi==0.115.12
-gspread==6.1.2
+google-cloud-bigquery==3.27.0
 google-auth==2.40.1
+authlib==1.3.2
 httpx==0.28.1
 imageio-ffmpeg==0.6.0
 jinja2==3.1.6
 pydantic
 pydantic-settings
 uvicorn==0.34.0
-gunicorn
 python-multipart
 itsdangerous==2.2.0

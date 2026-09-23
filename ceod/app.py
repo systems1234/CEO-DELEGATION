@@ -3,26 +3,21 @@ from __future__ import annotations
 import hmac
 import json
 import logging
-import secrets
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from authlib.integrations.starlette_client import OAuth
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
+from starlette.middleware.sessions import SessionMiddleware
 
 from ceod.config import Settings
-
-try:
-  from apscheduler.schedulers.background import BackgroundScheduler as _BackgroundScheduler
-  BackgroundScheduler = _BackgroundScheduler
-except ImportError:  # pragma: no cover - exercised only in minimal local envs
-  BackgroundScheduler = None  # type: ignore[assignment,misc]
 
 if TYPE_CHECKING:
   from ceod.container import AppContainer
@@ -49,7 +44,6 @@ class SendTextPayload(BaseModel):
 class MemberCreatePayload(BaseModel):
   name: str = Field(min_length=1)
   number: str = Field(min_length=1)
-  sheet_name: str = ""
 
 
 def create_app(settings: Settings | None = None, container: "AppContainer" | None = None) -> FastAPI:
@@ -62,25 +56,25 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
   LOGGER.info("Logging initialised — level=DEBUG")
 
   resolved_container = container or _build_runtime_container(settings)
-  scheduler = _build_scheduler(resolved_container)
+  oauth = _build_oauth_client(resolved_container.settings)
 
   @asynccontextmanager
   async def lifespan(app: FastAPI):
     app.state.container = resolved_container
-    app.state.scheduler = scheduler
-    if scheduler and not scheduler.running:
-      scheduler.start()
-      LOGGER.info("Daily scheduler started")
     try:
       yield
     finally:
-      if scheduler and scheduler.running:
-        scheduler.shutdown(wait=False)
       app.state.container.close()
 
   app = FastAPI(title="CEO Delegation Service", version="1.0.0", lifespan=lifespan)
   app.state.container = resolved_container
-  app.state.scheduler = scheduler
+  app.state.oauth = oauth
+  app.add_middleware(
+    SessionMiddleware,
+    secret_key=resolved_container.settings.session_secret or "ceod-fallback-secret-change-me",
+    session_cookie="ceod_oauth_state",
+    max_age=600,
+  )
   app.mount("/static", StaticFiles(directory=str(WEB_ROOT / "static")), name="static")
 
   @app.middleware("http")
@@ -98,32 +92,40 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
     return response
 
   @app.get("/login", response_class=HTMLResponse)
-  def login_page(request: Request, next: str = "/") -> HTMLResponse:
+  def login_page(request: Request, next: str = "/", error: str = "") -> HTMLResponse:
     return TEMPLATES.TemplateResponse(
-      request=request, name="login.html", context={"next": next, "error": ""},
+      request=request, name="login.html", context={"next": next, "error": error},
     )
 
-  @app.post("/login")
-  async def login_submit(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
-    next: str = Form(default="/"),
-  ) -> Response:
+  @app.get("/auth/login")
+  async def auth_login(request: Request, next: str = "/") -> Response:
     settings = app.state.container.settings
-    if not _credentials_valid(username, password, settings):
-      return TEMPLATES.TemplateResponse(
-        request=request,
-        name="login.html",
-        context={"next": next, "error": "Incorrect username or password."},
-        status_code=401,
-      )
-    token = _make_session_token(username, settings)
-    safe_next = next if next.startswith("/") else "/"
-    response = RedirectResponse(url=safe_next, status_code=302)
+    request.session["ceod_next"] = next if next.startswith("/") else "/"
+    redirect_uri = _oauth_redirect_uri(request, settings)
+    return await app.state.oauth.google.authorize_redirect(request, redirect_uri)
+
+  @app.get("/auth/callback")
+  async def auth_callback(request: Request) -> Response:
+    settings = app.state.container.settings
+    next_url = request.session.pop("ceod_next", "/")
+    try:
+      token = await app.state.oauth.google.authorize_access_token(request)
+      userinfo = token.get("userinfo") or {}
+    except Exception:
+      LOGGER.exception("Google OAuth callback failed")
+      return RedirectResponse(url="/login?error=Sign-in+failed.+Please+try+again.", status_code=302)
+
+    email = str(userinfo.get("email", "")).strip().lower()
+    email_verified = bool(userinfo.get("email_verified", False))
+    if not email or not email_verified or not _is_allowed_google_account(email, settings):
+      LOGGER.warning("Rejected Google sign-in for email=%s", email)
+      return RedirectResponse(url="/login?error=Your+Google+account+is+not+authorised+for+this+dashboard.", status_code=302)
+
+    token_value = _make_session_token(email, settings)
+    response = RedirectResponse(url=next_url, status_code=302)
     response.set_cookie(
-      SESSION_COOKIE, token,
-      max_age=SESSION_MAX_AGE, httponly=True, samesite="lax",
+      SESSION_COOKIE, token_value,
+      max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", secure=True,
     )
     return response
 
@@ -182,7 +184,6 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
       member = app.state.container.service.add_team_member(
         name=payload.name,
         number=payload.number,
-        sheet_name=payload.sheet_name,
       )
     except ValueError as exc:
       raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -294,6 +295,13 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
 
     return PlainTextResponse("OK")
 
+  @app.post("/api/cron/daily-followup")
+  def cron_daily_followup(request: Request) -> JSONResponse:
+    settings = app.state.container.settings
+    _require_cron_secret(request, settings)
+    app.state.container.service.daily_follow_up_check()
+    return JSONResponse({"ok": True})
+
   return app
 
 
@@ -314,26 +322,28 @@ def _serialise_task_from_dict(task: dict[str, object]) -> dict[str, object]:
   return task
 
 
-def _build_scheduler(container: "AppContainer") -> Any:
-  if not container.settings.scheduler_enabled:
-    return None
-
-  scheduler = BackgroundScheduler(timezone=container.settings.script_timezone)
-  scheduler.add_job(
-    container.service.daily_follow_up_check,
-    trigger="cron",
-    hour=container.settings.scheduler_hour_ist,
-    minute=container.settings.scheduler_minute_ist,
-    id="daily_follow_up_check",
-    replace_existing=True,
-  )
-  return scheduler
-
-
 def _build_runtime_container(settings: Settings | None) -> "AppContainer":
   from ceod.container import build_container
 
   return build_container(settings)
+
+
+def _build_oauth_client(settings: Settings) -> OAuth:
+  oauth = OAuth()
+  oauth.register(
+    name="google",
+    client_id=settings.google_oauth_client_id,
+    client_secret=settings.google_oauth_client_secret,
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
+  )
+  return oauth
+
+
+def _oauth_redirect_uri(request: Request, settings: Settings) -> str:
+  if settings.public_base_url:
+    return f"{settings.public_base_url.rstrip('/')}/auth/callback"
+  return str(request.url_for("auth_callback"))
 
 
 def _is_protected_dashboard_path(path: str) -> bool:
@@ -345,8 +355,8 @@ def _get_serializer(settings: Any) -> URLSafeTimedSerializer:
   return URLSafeTimedSerializer(secret, salt="ceod-session")
 
 
-def _make_session_token(username: str, settings: Any) -> str:
-  return _get_serializer(settings).dumps(username)
+def _make_session_token(email: str, settings: Any) -> str:
+  return _get_serializer(settings).dumps(email)
 
 
 def _has_valid_session(request: Request, settings: Any) -> bool:
@@ -360,15 +370,19 @@ def _has_valid_session(request: Request, settings: Any) -> bool:
     return False
 
 
-def _credentials_valid(username: str, password: str, settings: Any) -> bool:
-  pairs: list[tuple[str, str]] = []
-  u, p = getattr(settings, "dashboard_username", None), getattr(settings, "dashboard_password", None)
-  if u and p:
-    pairs.append((u, p))
-  du, dp = getattr(settings, "dev_username", None), getattr(settings, "dev_password", None)
-  if du and dp:
-    pairs.append((du, dp))
-  return any(
-    hmac.compare_digest(username, eu) and hmac.compare_digest(password, ep)
-    for eu, ep in pairs
-  )
+def _is_allowed_google_account(email: str, settings: Any) -> bool:
+  allowed_domain = getattr(settings, "allowed_google_domain", None)
+  if allowed_domain and email.endswith(f"@{allowed_domain.strip().lower()}"):
+    return True
+  allowed_emails = getattr(settings, "allowed_google_emails", None) or ""
+  allowlist = {addr.strip().lower() for addr in allowed_emails.split(",") if addr.strip()}
+  return email in allowlist
+
+
+def _require_cron_secret(request: Request, settings: Any) -> None:
+  expected = getattr(settings, "cron_secret", None)
+  if not expected:
+    raise HTTPException(status_code=503, detail="CRON_SECRET is not configured")
+  provided = request.headers.get("x-cron-secret", "")
+  if not hmac.compare_digest(provided, expected):
+    raise HTTPException(status_code=401, detail="Invalid cron secret")

@@ -15,7 +15,6 @@ class TaskStatus(str, Enum):
 class TeamMember:
   name: str
   number: str
-  sheet_name: str
 
 
 @dataclass(frozen=True)
@@ -61,7 +60,6 @@ class TaskRecord:
 class SeedProfile:
   name: str
   number: str
-  sheet_name: str
 
 
 @dataclass(frozen=True)
