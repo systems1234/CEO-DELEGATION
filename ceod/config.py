@@ -37,22 +37,23 @@ class Settings(BaseSettings):
   green_api_token: str | None = Field(default=None, alias="GREEN_API_TOKEN")
   green_api_allowed_group_id: str | None = Field(default=None, alias="GREEN_API_ALLOWED_GROUP_ID")
 
-  spreadsheet_id: str = Field(alias="SPREADSHEET_ID")
+  bigquery_project_id: str = Field(alias="BIGQUERY_PROJECT_ID")
+  bigquery_dataset: str = Field(default="ceod", alias="BIGQUERY_DATASET")
   google_service_account_json: str | None = Field(default=None, alias="GOOGLE_SERVICE_ACCOUNT_JSON")
   google_application_credentials: str | None = Field(default=None, alias="GOOGLE_APPLICATION_CREDENTIALS")
 
   script_timezone: str = Field(default="Asia/Kolkata", alias="SCRIPT_TIMEZONE")
   http_timeout_seconds: float = Field(default=20.0, alias="HTTP_TIMEOUT_SECONDS")
-  dashboard_auth_enabled: bool = Field(default=True, alias="DASHBOARD_AUTH_ENABLED")
-  dashboard_username: str | None = Field(default=None, alias="DASHBOARD_USERNAME")
-  dashboard_password: str | None = Field(default=None, alias="DASHBOARD_PASSWORD")
-  dev_username: str | None = Field(default=None, alias="DEV_USERNAME")
-  dev_password: str | None = Field(default=None, alias="DEV_PASSWORD")
-  session_secret: str | None = Field(default=None, alias="SESSION_SECRET")
 
-  scheduler_enabled: bool = Field(default=False, alias="SCHEDULER_ENABLED")
-  scheduler_hour_ist: int = Field(default=9, alias="SCHEDULER_HOUR_IST")
-  scheduler_minute_ist: int = Field(default=0, alias="SCHEDULER_MINUTE_IST")
+  dashboard_auth_enabled: bool = Field(default=True, alias="DASHBOARD_AUTH_ENABLED")
+  google_oauth_client_id: str | None = Field(default=None, alias="GOOGLE_OAUTH_CLIENT_ID")
+  google_oauth_client_secret: str | None = Field(default=None, alias="GOOGLE_OAUTH_CLIENT_SECRET")
+  allowed_google_domain: str | None = Field(default=None, alias="ALLOWED_GOOGLE_DOMAIN")
+  allowed_google_emails: str | None = Field(default=None, alias="ALLOWED_GOOGLE_EMAILS")
+  session_secret: str | None = Field(default=None, alias="SESSION_SECRET")
+  public_base_url: str | None = Field(default=None, alias="PUBLIC_BASE_URL")
+
+  cron_secret: str | None = Field(default=None, alias="CRON_SECRET")
 
   @model_validator(mode="after")
   def validate_required_fields(self) -> "Settings":
@@ -84,15 +85,24 @@ class Settings(BaseSettings):
 
     if not self.google_service_account_json and not self.google_application_credentials:
       raise ConfigurationError(
-        "Provide GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_APPLICATION_CREDENTIALS for Google Sheets access."
+        "Provide GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_APPLICATION_CREDENTIALS for BigQuery access."
       )
 
-    has_dashboard_username = bool(self.dashboard_username)
-    has_dashboard_password = bool(self.dashboard_password)
-    if has_dashboard_username != has_dashboard_password:
-      raise ConfigurationError("Set both DASHBOARD_USERNAME and DASHBOARD_PASSWORD or neither.")
-
-    if self.dashboard_auth_enabled and not (has_dashboard_username and has_dashboard_password):
-      raise ConfigurationError("Missing dashboard authentication configuration: DASHBOARD_USERNAME, DASHBOARD_PASSWORD")
+    if self.dashboard_auth_enabled:
+      missing = [
+        key
+        for key, value in {
+          "GOOGLE_OAUTH_CLIENT_ID": self.google_oauth_client_id,
+          "GOOGLE_OAUTH_CLIENT_SECRET": self.google_oauth_client_secret,
+          "SESSION_SECRET": self.session_secret,
+        }.items()
+        if not value
+      ]
+      if missing:
+        raise ConfigurationError(f"Missing SSO configuration: {', '.join(missing)}")
+      if not self.allowed_google_domain and not self.allowed_google_emails:
+        raise ConfigurationError(
+          "Set ALLOWED_GOOGLE_DOMAIN (e.g. gempundit.com) or ALLOWED_GOOGLE_EMAILS to restrict dashboard login."
+        )
 
     return self

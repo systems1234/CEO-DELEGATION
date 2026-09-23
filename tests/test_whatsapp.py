@@ -21,6 +21,7 @@ def build_settings() -> SimpleNamespace:
     green_api_url="https://green.example.com",
     green_api_instance_id="12345",
     green_api_token="green-token",
+    green_api_allowed_group_id=None,
   )
 
 

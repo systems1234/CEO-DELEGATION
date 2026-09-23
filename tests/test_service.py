@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import unittest
-from base64 import b64encode
 from dataclasses import replace
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
+from itsdangerous import URLSafeTimedSerializer
 
 from ceod.app import create_app
 from ceod.models import DashboardSnapshot, DashboardStats, IncomingMessage, ParsedPostponeReply, ParsedTaskAssignment, SeedProfile, TaskRecord, TaskStatus, TeamMember
@@ -50,7 +50,7 @@ class FakeWhatsAppGateway:
 
 class FakeRepository:
   def __init__(self) -> None:
-    self.members = [TeamMember(name="Rahul", number="919000000001", sheet_name="Rahul Tasks")]
+    self.members = [TeamMember(name="Rahul", number="919000000001")]
     self.tasks: dict[str, TaskRecord] = {}
     self.pending_postpone: dict[str, str] = {}
     self.pending_commitment: dict[str, str] = {}
@@ -158,9 +158,14 @@ class FakeRepository:
   def get_chat_log(self) -> list[dict[str, str]]:
     return list(self.chat_log)
 
+  def add_team_member(self, name: str, number: str) -> TeamMember:
+    member = TeamMember(name=name, number=number)
+    self.members.append(member)
+    return member
+
   def seed_random_test_profiles(self, count: int) -> list[SeedProfile]:
     self.seed_profiles = [
-      SeedProfile(name=f"User {index}", number=f"919000000{index:03d}", sheet_name=f"User_{index}")
+      SeedProfile(name=f"User {index}", number=f"919000000{index:03d}")
       for index in range(count)
     ]
     return list(self.seed_profiles)
@@ -315,46 +320,52 @@ class DashboardAppTests(unittest.TestCase):
       timezone_name="Asia/Kolkata",
     )
     self.service.assign_task(assignee="Rahul", task="Existing dashboard task", due_date="2026-04-24")
+    self.session_secret = "test-session-secret"
     fake_container = SimpleNamespace(
       settings=SimpleNamespace(
-        scheduler_enabled=False,
         script_timezone="Asia/Kolkata",
         dashboard_auth_enabled=True,
-        dashboard_username="ceo",
-        dashboard_password="secret-pass",
+        google_oauth_client_id=None,
+        google_oauth_client_secret=None,
+        allowed_google_domain="example.com",
+        allowed_google_emails=None,
+        session_secret=self.session_secret,
+        public_base_url=None,
+        cron_secret="test-cron-secret",
       ),
       service=self.service,
       whatsapp=self.gateway,
       close=lambda: None,
     )
     self.client = TestClient(create_app(container=fake_container))
-    self.auth_headers = {
-      "Authorization": f"Basic {b64encode(b'ceo:secret-pass').decode('ascii')}",
-    }
+    session_token = URLSafeTimedSerializer(self.session_secret, salt="ceod-session").dumps("ceo@example.com")
+    self.client.cookies.set("ceod_session", session_token)
 
   def test_dashboard_page_requires_auth(self) -> None:
-    response = self.client.get("/")
-    self.assertEqual(response.status_code, 401)
+    anonymous_client = TestClient(self.client.app, follow_redirects=False)
+    response = anonymous_client.get("/")
+    self.assertEqual(response.status_code, 302)
+    self.assertTrue(response.headers["location"].startswith("/login"))
 
   def test_dashboard_page_loads(self) -> None:
-    response = self.client.get("/", headers=self.auth_headers)
+    response = self.client.get("/")
     self.assertEqual(response.status_code, 200)
     self.assertIn("Mission Control", response.text)
 
   def test_chat_page_loads(self) -> None:
-    response = self.client.get("/chat", headers=self.auth_headers)
+    response = self.client.get("/chat")
     self.assertEqual(response.status_code, 200)
     self.assertIn("Chats", response.text)
 
   def test_dashboard_api_returns_snapshot(self) -> None:
-    response = self.client.get("/api/dashboard", headers=self.auth_headers)
+    response = self.client.get("/api/dashboard")
     self.assertEqual(response.status_code, 200)
     payload = response.json()
     self.assertEqual(payload["stats"]["total_tasks"], 1)
     self.assertEqual(payload["members"][0]["name"], "Rahul")
 
   def test_chat_api_returns_conversations(self) -> None:
-    response = self.client.get("/api/chats", headers=self.auth_headers)
+    response = self.client.get("/api/chats")
     self.assertEqual(response.status_code, 200)
     payload = response.json()
     self.assertEqual(payload["conversations"][0]["number"], "919000000001")
@@ -362,7 +373,6 @@ class DashboardAppTests(unittest.TestCase):
   def test_assign_task_api_creates_task(self) -> None:
     response = self.client.post(
       "/api/tasks",
-      headers=self.auth_headers,
       json={"assignee": "Rahul", "task": "Frontend-created task", "due_date": "2026-04-30"},
     )
     self.assertEqual(response.status_code, 201)
@@ -373,12 +383,11 @@ class DashboardAppTests(unittest.TestCase):
   def test_send_api_logs_message_for_chat_history(self) -> None:
     response = self.client.post(
       "/api/send",
-      headers=self.auth_headers,
       json={"to": "919000000001", "message": "Manual follow-up"},
     )
 
     self.assertEqual(response.status_code, 200)
-    chat_response = self.client.get("/api/chats", headers=self.auth_headers)
+    chat_response = self.client.get("/api/chats")
     self.assertEqual(chat_response.status_code, 200)
     payload = chat_response.json()
     messages = payload["conversations"][0]["messages"]

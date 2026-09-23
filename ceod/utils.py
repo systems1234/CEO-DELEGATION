@@ -80,7 +80,6 @@ def build_random_seed_profiles(
   count: int,
   existing_names: set[str],
   existing_numbers: set[str],
-  existing_sheet_names: set[str],
 ) -> list[SeedProfile]:
   first_names = [
     "Aarav", "Vivaan", "Aditya", "Krish", "Ishaan",
@@ -105,18 +104,15 @@ def build_random_seed_profiles(
     last_name = random.choice(last_names)
     suffix = f"{random.randint(100, 999)}"
     name = f"{first_name} {last_name} {suffix}"
-    sheet_name = f"{first_name}_{suffix}"
     number = generate_random_indian_mobile(existing_numbers)
 
     lower_name = name.lower()
-    lower_sheet_name = sheet_name.lower()
-    if lower_name in existing_names or lower_sheet_name in existing_sheet_names:
+    if lower_name in existing_names:
       continue
 
     existing_names.add(lower_name)
     existing_numbers.add(number)
-    existing_sheet_names.add(lower_sheet_name)
-    profiles.append(SeedProfile(name=name, number=number, sheet_name=sheet_name))
+    profiles.append(SeedProfile(name=name, number=number))
 
   return profiles
 

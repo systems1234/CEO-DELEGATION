@@ -19,7 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
 
   subparsers.add_parser("daily-followup", help="Run the daily follow-up job once")
 
-  seed = subparsers.add_parser("seed-profiles", help="Create random test members in the Config sheet")
+  seed = subparsers.add_parser("seed-profiles", help="Create random test members in BigQuery")
   seed.add_argument("--count", type=int, default=10)
 
   return parser
@@ -47,7 +47,7 @@ def main() -> None:
       profiles = container.service.seed_random_test_profiles(args.count)
       logging.getLogger(__name__).info("Created %s test profiles", len(profiles))
       for profile in profiles:
-        logging.getLogger(__name__).info("%s | %s | %s", profile.name, profile.number, profile.sheet_name)
+        logging.getLogger(__name__).info("%s | %s", profile.name, profile.number)
       return
   finally:
     container.close()

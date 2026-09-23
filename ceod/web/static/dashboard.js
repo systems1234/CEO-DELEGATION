@@ -107,7 +107,6 @@ function renderMembers(members) {
     item.innerHTML = `
       <div>
         <div class="member-name">${member.name}</div>
-        <div class="member-sheet">${member.sheet_name}</div>
       </div>
       <div class="member-sheet">${member.number}</div>
     `;
@@ -301,7 +300,6 @@ async function submitAddMember(event) {
   const payload = {
     name: document.getElementById("member-name-input").value.trim(),
     number: document.getElementById("member-number-input").value.trim(),
-    sheet_name: document.getElementById("member-sheet-input").value.trim(),
   };
   try {
     const response = await fetch("/api/members", {
