@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/static/dashboard.css" />
@@ -23,24 +23,7 @@
   >
     <a class="skip-link" href="#main-content">Skip to content</a>
     <div class="page-shell dashboard-shell">
-      <header class="topbar">
-        <div class="topbar-brand">
-          <p class="eyebrow">CEO Mission Control</p>
-          <h1 class="topbar-title">Live operations</h1>
-          <p class="topbar-text">Task routing, follow-up visibility, and WhatsApp actions in one board.</p>
-        </div>
-        <div class="topbar-actions">
-          <div class="pulse-wrap" aria-live="polite">
-            <span class="pulse-dot"></span>
-            <span id="refresh-status">Live sync active</span>
-          </div>
-          <a class="ghost-button" href="/chat">Messages</a>
-          <a class="ghost-button" href="/logout">Sign out</a>
-          <button id="refresh-button" class="submit-button topbar-refresh" type="button">
-            Refresh Board
-          </button>
-        </div>
-      </header>
+      {% include "_nav.html" %}
 
       <main id="main-content" class="dashboard-layout">
         <section class="assign-panel" aria-labelledby="assign-panel-title">
@@ -69,6 +52,15 @@
               ></textarea>
             </label>
             <label class="field">
+              <span>Priority</span>
+              <select id="priority-select" name="priority" autocomplete="off">
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium" selected>Medium</option>
+                <option value="Low">Low</option>
+              </select>
+            </label>
+            <label class="field">
               <span>Due date</span>
               <input id="due-date-input" name="due_date" type="date" autocomplete="off" />
             </label>
@@ -91,6 +83,10 @@
               <label class="field">
                 <span>WhatsApp number</span>
                 <input id="member-number-input" name="number" type="tel" placeholder="919876543210" required />
+              </label>
+              <label class="field">
+                <span>Google email <small>(optional — enables their My Tasks login)</small></span>
+                <input id="member-email-input" name="email" type="email" placeholder="priya@company.com" />
               </label>
               <button class="submit-button" type="submit">Add Member</button>
               <p id="add-member-status" class="form-status" aria-live="polite"></p>
@@ -179,6 +175,7 @@
           <span class="status-pill"></span>
           <span class="task-row-id"></span>
         </div>
+        <span class="priority-pill"></span>
         <h3 class="task-title"></h3>
         <p class="task-meta assignee"></p>
         <dl class="task-details">
@@ -196,9 +193,14 @@
           </div>
         </dl>
         <p class="task-reason" hidden></p>
+        <div class="triage-row-actions task-card-actions">
+          <button class="action-btn action-done" type="button" data-action="done">Mark Done</button>
+          <button class="action-btn action-postpone" type="button" data-action="postpone">Postpone</button>
+        </div>
       </article>
     </template>
 
+    <script src="/static/task-actions.js" defer></script>
     <script src="/static/dashboard.js" defer></script>
   </body>
 </html>

@@ -11,10 +11,26 @@ class TaskStatus(str, Enum):
   OVERDUE = "Overdue"
 
 
+class TaskPriority(str, Enum):
+  LOW = "Low"
+  MEDIUM = "Medium"
+  HIGH = "High"
+  CRITICAL = "Critical"
+
+
+PRIORITY_RANK: dict[TaskPriority, int] = {
+  TaskPriority.CRITICAL: 0,
+  TaskPriority.HIGH: 1,
+  TaskPriority.MEDIUM: 2,
+  TaskPriority.LOW: 3,
+}
+
+
 @dataclass(frozen=True)
 class TeamMember:
   name: str
   number: str
+  email: str | None = None
 
 
 @dataclass(frozen=True)
@@ -43,6 +59,7 @@ class TaskRecord:
   assignee_number: str
   task: str
   status: TaskStatus
+  priority: TaskPriority = TaskPriority.MEDIUM
   assign_date: str | None = None
   due_date: str | None = None
   new_date: str | None = None
@@ -78,3 +95,45 @@ class DashboardSnapshot:
   stats: DashboardStats
   members: list[TeamMember]
   tasks: list[TaskRecord]
+
+
+@dataclass(frozen=True)
+class DateGroup:
+  date: str
+  tasks: list[TaskRecord]
+
+
+@dataclass(frozen=True)
+class TriageView:
+  generated_at: str
+  today: str
+  overdue_groups: list[DateGroup]
+  due_today: list[TaskRecord]
+
+
+@dataclass(frozen=True)
+class MemberKpi:
+  name: str
+  assigned: int
+  completed: int
+  overdue: int
+  pending: int
+  completion_rate: float
+
+
+@dataclass(frozen=True)
+class DailyCompletionPoint:
+  date: str
+  completed: int
+
+
+@dataclass(frozen=True)
+class KpiReport:
+  generated_at: str
+  total_tasks: int
+  completed_tasks: int
+  overdue_tasks: int
+  completion_rate: float
+  avg_completion_days: float | None
+  members: list[MemberKpi]
+  daily_trend: list[DailyCompletionPoint]
