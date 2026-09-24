@@ -21,6 +21,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat(LOCALE, {
   hour: "2-digit",
   minute: "2-digit",
 });
+const shortDateFormatter = new Intl.DateTimeFormat(LOCALE, { day: "2-digit", month: "short" });
 
 const memberRoster = document.getElementById("member-roster");
 const assigneeSelect = document.getElementById("assignee-select");
@@ -125,6 +126,18 @@ function formatDate(value) {
   return dateFormatter.format(parsedDate);
 }
 
+function formatDateShort(value) {
+  if (!value) return "Not set";
+  const parsedDate = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsedDate.getTime())) return value;
+  return shortDateFormatter.format(parsedDate);
+}
+
+function setDateCell(node, value) {
+  node.textContent = formatDateShort(value);
+  node.title = formatDate(value);
+}
+
 function taskMatchesFilter(task) {
   return state.filter === "all" || task.status === state.filter;
 }
@@ -140,9 +153,9 @@ function createTaskCard(task) {
   fragment.querySelector(".task-row-id").textContent = task.row_id;
   fragment.querySelector(".task-title").textContent = task.task;
   fragment.querySelector(".assignee").textContent = `Assigned to ${task.assignee_name}`;
-  fragment.querySelector(".assign-date").textContent = formatDate(task.assign_date);
-  fragment.querySelector(".due-date").textContent = formatDate(task.due_date);
-  fragment.querySelector(".effective-date").textContent = formatDate(task.new_date || task.due_date);
+  setDateCell(fragment.querySelector(".assign-date"), task.assign_date);
+  setDateCell(fragment.querySelector(".due-date"), task.due_date);
+  setDateCell(fragment.querySelector(".effective-date"), task.new_date || task.due_date);
 
   const priorityNode = fragment.querySelector(".priority-pill");
   const priority = task.priority || "Medium";

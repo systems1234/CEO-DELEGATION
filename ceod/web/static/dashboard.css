@@ -570,12 +570,6 @@ a {
   background: rgba(165, 55, 43, 0.08);
 }
 
-.task-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
 .task-card {
   position: relative;
   display: grid;
@@ -633,22 +627,31 @@ a {
 
 .task-details {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  row-gap: 5px;
   margin: 0;
 }
 
+.task-details > div {
+  display: contents;
+}
+
 .task-details dt {
-  margin-bottom: 4px;
-  font-size: 0.76rem;
+  margin: 0;
+  font-size: 0.72rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   color: var(--muted);
+  white-space: nowrap;
+  align-self: center;
 }
 
 .task-details dd {
   margin: 0;
   font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .task-reason {
@@ -1003,10 +1006,6 @@ a {
 @media (max-width: 1140px) {
   .stats-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .task-grid {
-    grid-template-columns: 1fr;
   }
 }
 
