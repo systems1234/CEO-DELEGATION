@@ -7,14 +7,18 @@ CREATE SCHEMA IF NOT EXISTS `{project}.{dataset}` OPTIONS (location = 'US');
 CREATE TABLE IF NOT EXISTS `{project}.{dataset}.team_members` (
   name STRING NOT NULL,
   number STRING NOT NULL,
+  email STRING,
   created_at TIMESTAMP NOT NULL
 );
+
+ALTER TABLE `{project}.{dataset}.team_members` ADD COLUMN IF NOT EXISTS email STRING;
 
 CREATE TABLE IF NOT EXISTS `{project}.{dataset}.tasks` (
   row_id STRING NOT NULL,
   assignee_name STRING NOT NULL,
   assignee_number STRING NOT NULL,
   task STRING NOT NULL,
+  priority STRING,
   assign_date DATE,
   due_date DATE,
   new_date DATE,
@@ -26,6 +30,8 @@ CREATE TABLE IF NOT EXISTS `{project}.{dataset}.tasks` (
   created_at TIMESTAMP NOT NULL,
   updated_at TIMESTAMP NOT NULL
 );
+
+ALTER TABLE `{project}.{dataset}.tasks` ADD COLUMN IF NOT EXISTS priority STRING;
 
 CREATE TABLE IF NOT EXISTS `{project}.{dataset}.runtime_state` (
   key STRING NOT NULL,

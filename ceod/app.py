@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
 from ceod.config import Settings
+from ceod.models import TaskPriority
 
 if TYPE_CHECKING:
   from ceod.container import AppContainer
@@ -25,7 +26,12 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 WEB_ROOT = Path(__file__).resolve().parent / "web"
 TEMPLATES = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
-PROTECTED_DASHBOARD_PATHS = frozenset({"/", "/chat", "/api/dashboard", "/api/tasks", "/api/chats", "/api/send", "/api/send-media", "/api/members"})
+PROTECTED_DASHBOARD_PATHS = frozenset({
+  "/", "/board", "/my-tasks", "/reports", "/chat",
+  "/api/dashboard", "/api/tasks", "/api/chats", "/api/send", "/api/send-media", "/api/members",
+  "/api/triage", "/api/my-tasks", "/api/reports",
+})
+PROTECTED_DASHBOARD_PREFIXES = ("/api/tasks/",)
 SESSION_COOKIE = "ceod_session"
 SESSION_MAX_AGE = 60 * 60 * 24  # 24 hours
 
@@ -34,6 +40,7 @@ class TaskCreatePayload(BaseModel):
   assignee: str = Field(min_length=1)
   task: str = Field(min_length=1)
   due_date: str | None = None
+  priority: str = "Medium"
 
 
 class SendTextPayload(BaseModel):
@@ -44,6 +51,12 @@ class SendTextPayload(BaseModel):
 class MemberCreatePayload(BaseModel):
   name: str = Field(min_length=1)
   number: str = Field(min_length=1)
+  email: str = ""
+
+
+class PostponePayload(BaseModel):
+  new_date: str = Field(min_length=1)
+  reason: str = Field(min_length=1)
 
 
 def create_app(settings: Settings | None = None, container: "AppContainer" | None = None) -> FastAPI:
@@ -140,14 +153,60 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
     return JSONResponse({"status": "ok"})
 
   @app.get("/", response_class=HTMLResponse)
-  def dashboard(request: Request) -> HTMLResponse:
+  def home(request: Request) -> HTMLResponse:
     return TEMPLATES.TemplateResponse(
       request=request,
-      name="dashboard.html",
+      name="home.html",
       context={
-        "app_title": "CEO Mission Control",
+        "app_title": "CEO Mission Control - Today",
+        "active_page": "home",
+        "page_heading": "Today's priorities",
+        "page_subtitle": "Overdue and due-today work, grouped by date and priority.",
+        "current_user_email": _current_session_email(request, app.state.container.settings),
+      },
+    )
+
+  @app.get("/board", response_class=HTMLResponse)
+  def board(request: Request) -> HTMLResponse:
+    return TEMPLATES.TemplateResponse(
+      request=request,
+      name="board.html",
+      context={
+        "app_title": "CEO Mission Control - Board",
         "api_dashboard_url": "/api/dashboard",
         "api_task_url": "/api/tasks",
+        "active_page": "board",
+        "page_heading": "Live operations",
+        "page_subtitle": "Task routing, follow-up visibility, and WhatsApp actions in one board.",
+        "current_user_email": _current_session_email(request, app.state.container.settings),
+      },
+    )
+
+  @app.get("/my-tasks", response_class=HTMLResponse)
+  def my_tasks_page(request: Request) -> HTMLResponse:
+    return TEMPLATES.TemplateResponse(
+      request=request,
+      name="my_tasks.html",
+      context={
+        "app_title": "CEO Mission Control - My Tasks",
+        "active_page": "my-tasks",
+        "page_heading": "My tasks",
+        "page_subtitle": "Tasks assigned to you, with quick actions.",
+        "current_user_email": _current_session_email(request, app.state.container.settings),
+      },
+    )
+
+  @app.get("/reports", response_class=HTMLResponse)
+  def reports_page(request: Request) -> HTMLResponse:
+    return TEMPLATES.TemplateResponse(
+      request=request,
+      name="reports.html",
+      context={
+        "app_title": "CEO Mission Control - Reports",
+        "active_page": "reports",
+        "page_heading": "KPI reports",
+        "page_subtitle": "Completion rate, overdue load, and team performance.",
+        "current_user_email": _current_session_email(request, app.state.container.settings),
       },
     )
 
@@ -156,13 +215,44 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
     snapshot = app.state.container.service.get_dashboard_snapshot()
     return JSONResponse(_serialise_snapshot(snapshot))
 
+  @app.get("/api/triage")
+  def triage_view() -> JSONResponse:
+    view = app.state.container.service.get_triage_view()
+    data = asdict(view)
+    for group in data["overdue_groups"]:
+      group["tasks"] = [_serialise_task_from_dict(t) for t in group["tasks"]]
+    data["due_today"] = [_serialise_task_from_dict(t) for t in data["due_today"]]
+    return JSONResponse(data)
+
+  @app.get("/api/my-tasks")
+  def my_tasks_api(request: Request) -> JSONResponse:
+    settings = app.state.container.settings
+    email = _current_session_email(request, settings)
+    linked = bool(email and app.state.container.repository.get_member_by_email(email))
+    tasks = app.state.container.service.get_my_tasks(email) if email else []
+    return JSONResponse({
+      "email": email,
+      "linked": linked,
+      "tasks": [_serialise_task(t) for t in tasks],
+    })
+
+  @app.get("/api/reports")
+  def reports_api() -> JSONResponse:
+    report = app.state.container.service.get_kpi_report()
+    return JSONResponse(asdict(report))
+
   @app.post("/api/tasks", status_code=201)
   def assign_task(payload: TaskCreatePayload) -> JSONResponse:
+    try:
+      priority = TaskPriority(payload.priority)
+    except ValueError as exc:
+      raise HTTPException(status_code=400, detail=f'Invalid priority "{payload.priority}"') from exc
     try:
       task = app.state.container.service.assign_task(
         assignee=payload.assignee,
         task=payload.task,
         due_date=payload.due_date,
+        priority=priority,
         notify_ceo=False,
         notify_assignee=True,
       )
@@ -178,12 +268,31 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
       status_code=201,
     )
 
+  @app.post("/api/tasks/{row_id}/done")
+  def mark_task_done(row_id: str) -> JSONResponse:
+    try:
+      task = app.state.container.service.complete_task(row_id=row_id)
+    except ValueError as exc:
+      raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return JSONResponse({"task": _serialise_task(task)})
+
+  @app.post("/api/tasks/{row_id}/postpone")
+  def postpone_task_api(row_id: str, payload: PostponePayload) -> JSONResponse:
+    try:
+      task = app.state.container.service.postpone_task_from_dashboard(
+        row_id=row_id, new_date=payload.new_date, reason=payload.reason,
+      )
+    except ValueError as exc:
+      raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse({"task": _serialise_task(task)})
+
   @app.post("/api/members", status_code=201)
   def add_member(payload: MemberCreatePayload) -> JSONResponse:
     try:
       member = app.state.container.service.add_team_member(
         name=payload.name,
         number=payload.number,
+        email=payload.email,
       )
     except ValueError as exc:
       raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -319,6 +428,9 @@ def _serialise_task(task: object) -> dict[str, object]:
 def _serialise_task_from_dict(task: dict[str, object]) -> dict[str, object]:
   status = task["status"]
   task["status"] = status.value if hasattr(status, "value") else status
+  priority = task.get("priority")
+  if priority is not None:
+    task["priority"] = priority.value if hasattr(priority, "value") else priority
   return task
 
 
@@ -347,7 +459,7 @@ def _oauth_redirect_uri(request: Request, settings: Settings) -> str:
 
 
 def _is_protected_dashboard_path(path: str) -> bool:
-  return path in PROTECTED_DASHBOARD_PATHS
+  return path in PROTECTED_DASHBOARD_PATHS or path.startswith(PROTECTED_DASHBOARD_PREFIXES)
 
 
 def _get_serializer(settings: Any) -> URLSafeTimedSerializer:
@@ -360,14 +472,17 @@ def _make_session_token(email: str, settings: Any) -> str:
 
 
 def _has_valid_session(request: Request, settings: Any) -> bool:
+  return _current_session_email(request, settings) is not None
+
+
+def _current_session_email(request: Request, settings: Any) -> str | None:
   token = request.cookies.get(SESSION_COOKIE)
   if not token:
-    return False
+    return None
   try:
-    _get_serializer(settings).loads(token, max_age=SESSION_MAX_AGE)
-    return True
+    return str(_get_serializer(settings).loads(token, max_age=SESSION_MAX_AGE))
   except (SignatureExpired, BadSignature):
-    return False
+    return None
 
 
 def _is_allowed_google_account(email: str, settings: Any) -> bool:

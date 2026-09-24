@@ -10,7 +10,7 @@ from google.oauth2.service_account import Credentials
 
 from ceod.config import Settings
 from ceod.exceptions import NotFoundError
-from ceod.models import ParsedTaskAssignment, SeedProfile, TaskRecord, TaskStatus, TeamMember
+from ceod.models import ParsedTaskAssignment, SeedProfile, TaskPriority, TaskRecord, TaskStatus, TeamMember
 from ceod.utils import build_random_seed_profiles, generate_row_id, normalise_whatsapp_number
 
 _SCHEMA_SQL_PATH = Path(__file__).resolve().parent / "schema.sql"
@@ -53,9 +53,9 @@ class GoogleBigQueryRepository:
 
   def get_team_members(self) -> list[TeamMember]:
     rows = self._client.query(
-      f"SELECT name, number FROM `{self._table('team_members')}` ORDER BY name"
+      f"SELECT name, number, email FROM `{self._table('team_members')}` ORDER BY name"
     ).result()
-    return [TeamMember(name=row.name, number=row.number) for row in rows]
+    return [TeamMember(name=row.name, number=row.number, email=row.email or None) for row in rows]
 
   def get_member_by_name(self, name: str) -> TeamMember | None:
     job_config = bigquery.QueryJobConfig(
@@ -63,35 +63,51 @@ class GoogleBigQueryRepository:
     )
     rows = list(
       self._client.query(
-        f"SELECT name, number FROM `{self._table('team_members')}` WHERE LOWER(name) = @name LIMIT 1",
+        f"SELECT name, number, email FROM `{self._table('team_members')}` WHERE LOWER(name) = @name LIMIT 1",
         job_config=job_config,
       ).result()
     )
-    return TeamMember(name=rows[0].name, number=rows[0].number) if rows else None
+    return TeamMember(name=rows[0].name, number=rows[0].number, email=rows[0].email or None) if rows else None
 
-  def add_team_member(self, name: str, number: str) -> TeamMember:
+  def get_member_by_email(self, email: str) -> TeamMember | None:
+    job_config = bigquery.QueryJobConfig(
+      query_parameters=[bigquery.ScalarQueryParameter("email", "STRING", email.strip().lower())]
+    )
+    rows = list(
+      self._client.query(
+        f"SELECT name, number, email FROM `{self._table('team_members')}` WHERE LOWER(email) = @email LIMIT 1",
+        job_config=job_config,
+      ).result()
+    )
+    return TeamMember(name=rows[0].name, number=rows[0].number, email=rows[0].email or None) if rows else None
+
+  def add_team_member(self, name: str, number: str, email: str = "") -> TeamMember:
     clean_name = name.strip()
     clean_number = normalise_whatsapp_number(number)
+    clean_email = email.strip().lower() or None
 
     for member in self.get_team_members():
       if member.name.lower() == clean_name.lower():
         raise ValueError(f'A member named "{clean_name}" already exists')
       if member.number == clean_number:
         raise ValueError(f'Number {clean_number} is already assigned to "{member.name}"')
+      if clean_email and member.email == clean_email:
+        raise ValueError(f'Email {clean_email} is already assigned to "{member.name}"')
 
     job_config = bigquery.QueryJobConfig(
       query_parameters=[
         bigquery.ScalarQueryParameter("name", "STRING", clean_name),
         bigquery.ScalarQueryParameter("number", "STRING", clean_number),
+        bigquery.ScalarQueryParameter("email", "STRING", clean_email),
       ]
     )
     self._client.query(
-      f"INSERT INTO `{self._table('team_members')}` (name, number, created_at) "
-      "VALUES (@name, @number, CURRENT_TIMESTAMP())",
+      f"INSERT INTO `{self._table('team_members')}` (name, number, email, created_at) "
+      "VALUES (@name, @number, @email, CURRENT_TIMESTAMP())",
       job_config=job_config,
     ).result()
     self._logger.info("Added team member name=%s number=%s", clean_name, clean_number)
-    return TeamMember(name=clean_name, number=clean_number)
+    return TeamMember(name=clean_name, number=clean_number, email=clean_email)
 
   def seed_random_test_profiles(self, count: int) -> list[SeedProfile]:
     members = self.get_team_members()
@@ -118,7 +134,12 @@ class GoogleBigQueryRepository:
 
   # -- tasks --------------------------------------------------------------
 
-  def create_task(self, parsed: ParsedTaskAssignment, today_iso: str) -> str:
+  def create_task(
+    self,
+    parsed: ParsedTaskAssignment,
+    today_iso: str,
+    priority: TaskPriority = TaskPriority.MEDIUM,
+  ) -> str:
     member = self.get_member_by_name(parsed.assignee)
     if member is None:
       raise NotFoundError(f'Unknown assignee "{parsed.assignee}"')
@@ -130,6 +151,7 @@ class GoogleBigQueryRepository:
         bigquery.ScalarQueryParameter("assignee_name", "STRING", member.name),
         bigquery.ScalarQueryParameter("assignee_number", "STRING", member.number),
         bigquery.ScalarQueryParameter("task", "STRING", parsed.task),
+        bigquery.ScalarQueryParameter("priority", "STRING", priority.value),
         bigquery.ScalarQueryParameter("assign_date", "DATE", today_iso),
         bigquery.ScalarQueryParameter("due_date", "DATE", parsed.due_date),
         bigquery.ScalarQueryParameter("status", "STRING", TaskStatus.PENDING.value),
@@ -138,9 +160,9 @@ class GoogleBigQueryRepository:
     self._client.query(
       f"""
       INSERT INTO `{self._table('tasks')}`
-        (row_id, assignee_name, assignee_number, task, assign_date, due_date, status, created_at, updated_at)
+        (row_id, assignee_name, assignee_number, task, priority, assign_date, due_date, status, created_at, updated_at)
       VALUES
-        (@row_id, @assignee_name, @assignee_number, @task, @assign_date, @due_date, @status,
+        (@row_id, @assignee_name, @assignee_number, @task, @priority, @assign_date, @due_date, @status,
          CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
       """,
       job_config=job_config,
@@ -311,6 +333,7 @@ class GoogleBigQueryRepository:
         assignee_number=task.assignee_number,
         task=task.task,
         status=TaskStatus.OVERDUE,
+        priority=task.priority,
         assign_date=task.assign_date,
         due_date=task.due_date,
         new_date=task.new_date,
@@ -443,6 +466,12 @@ class GoogleBigQueryRepository:
   def _task_status(self, raw: str) -> TaskStatus:
     return TaskStatus(raw or TaskStatus.PENDING.value)
 
+  def _task_priority(self, raw: str | None) -> TaskPriority:
+    try:
+      return TaskPriority(raw) if raw else TaskPriority.MEDIUM
+    except ValueError:
+      return TaskPriority.MEDIUM
+
   def _task_from_row(self, row: bigquery.table.Row) -> TaskRecord:
     return TaskRecord(
       row_id=row.row_id,
@@ -450,6 +479,7 @@ class GoogleBigQueryRepository:
       assignee_number=row.assignee_number,
       task=row.task,
       status=self._task_status(row.status),
+      priority=self._task_priority(getattr(row, "priority", None)),
       assign_date=_to_date_str(row.assign_date),
       due_date=_to_date_str(row.due_date),
       new_date=_to_date_str(row.new_date),

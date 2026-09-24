@@ -21,6 +21,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat(LOCALE, {
   hour: "2-digit",
   minute: "2-digit",
 });
+const shortDateFormatter = new Intl.DateTimeFormat(LOCALE, { day: "2-digit", month: "short" });
 
 const memberRoster = document.getElementById("member-roster");
 const assigneeSelect = document.getElementById("assignee-select");
@@ -125,6 +126,18 @@ function formatDate(value) {
   return dateFormatter.format(parsedDate);
 }
 
+function formatDateShort(value) {
+  if (!value) return "Not set";
+  const parsedDate = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsedDate.getTime())) return value;
+  return shortDateFormatter.format(parsedDate);
+}
+
+function setDateCell(node, value) {
+  node.textContent = formatDateShort(value);
+  node.title = formatDate(value);
+}
+
 function taskMatchesFilter(task) {
   return state.filter === "all" || task.status === state.filter;
 }
@@ -134,19 +147,30 @@ function createTaskCard(task) {
   const card = fragment.querySelector(".task-card");
   const statusClass = `status-${task.status.toLowerCase()}`;
   card.classList.add(statusClass);
+  card.dataset.rowId = task.row_id;
 
   fragment.querySelector(".status-pill").textContent = task.status;
   fragment.querySelector(".task-row-id").textContent = task.row_id;
   fragment.querySelector(".task-title").textContent = task.task;
   fragment.querySelector(".assignee").textContent = `Assigned to ${task.assignee_name}`;
-  fragment.querySelector(".assign-date").textContent = formatDate(task.assign_date);
-  fragment.querySelector(".due-date").textContent = formatDate(task.due_date);
-  fragment.querySelector(".effective-date").textContent = formatDate(task.new_date || task.due_date);
+  setDateCell(fragment.querySelector(".assign-date"), task.assign_date);
+  setDateCell(fragment.querySelector(".due-date"), task.due_date);
+  setDateCell(fragment.querySelector(".effective-date"), task.new_date || task.due_date);
+
+  const priorityNode = fragment.querySelector(".priority-pill");
+  const priority = task.priority || "Medium";
+  priorityNode.textContent = priority;
+  priorityNode.classList.add(`priority-${priority.toLowerCase()}`);
 
   const reasonNode = fragment.querySelector(".task-reason");
   if (task.postpone_reason) {
     reasonNode.hidden = false;
     reasonNode.textContent = `Delay context: ${task.postpone_reason}`;
+  }
+
+  const actions = fragment.querySelector(".task-card-actions");
+  if (task.status === "Done") {
+    actions.remove();
   }
 
   return fragment;
@@ -194,6 +218,10 @@ function renderTasks(tasks) {
 
     taskGrid.appendChild(lane);
   });
+
+  if (window.TaskActions) {
+    window.TaskActions.bindActionButtons(taskGrid, fetchDashboard);
+  }
 }
 
 function renderSnapshot(snapshot) {
@@ -242,6 +270,7 @@ async function submitTask(event) {
     assignee: assigneeSelect.value,
     task: document.getElementById("task-input").value.trim(),
     due_date: document.getElementById("due-date-input").value || null,
+    priority: document.getElementById("priority-select").value,
   };
 
   try {
@@ -300,6 +329,7 @@ async function submitAddMember(event) {
   const payload = {
     name: document.getElementById("member-name-input").value.trim(),
     number: document.getElementById("member-number-input").value.trim(),
+    email: document.getElementById("member-email-input").value.trim(),
   };
   try {
     const response = await fetch("/api/members", {

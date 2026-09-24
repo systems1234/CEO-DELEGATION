@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ app_title }}</title>
+    <meta name="description" content="Tasks assigned to you, with quick mark-done and postpone actions." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/dashboard.css" />
+  </head>
+  <body class="dashboard-page">
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <div class="page-shell dashboard-shell">
+      {% include "_nav.html" %}
+
+      <main id="main-content" class="workspace-panel" style="margin-top: 18px;">
+        <div id="my-tasks-error" class="board-message board-message-error" hidden>
+          Could not load your tasks. Check the API and refresh.
+        </div>
+        <div id="my-tasks-unlinked" class="empty-state" hidden>
+          Your Google account (<span id="my-tasks-email"></span>) isn't linked to a team member yet.
+          Ask your admin to add your email on the Board page's "Add member" form.
+        </div>
+        <div class="triage-row-list" id="my-tasks-list"></div>
+        <div id="my-tasks-empty" class="empty-state" hidden>You have no assigned tasks right now.</div>
+      </main>
+    </div>
+
+    <script src="/static/task-actions.js" defer></script>
+    <script src="/static/my-tasks.js" defer></script>
+  </body>
+</html>

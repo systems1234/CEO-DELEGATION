@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ app_title }}</title>
+    <meta name="description" content="Completion rate, overdue load, and per-member KPI reporting." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/dashboard.css" />
+  </head>
+  <body class="dashboard-page">
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <div class="page-shell dashboard-shell">
+      {% include "_nav.html" %}
+
+      <main id="main-content" class="workspace-panel" style="margin-top: 18px;">
+        <div id="reports-error" class="board-message board-message-error" hidden>
+          Could not load reports. Check the API and refresh.
+        </div>
+
+        <section class="kpi-grid" aria-label="Headline KPIs">
+          <article class="kpi-card">
+            <strong id="kpi-total">0</strong>
+            <span>Total Tasks</span>
+          </article>
+          <article class="kpi-card">
+            <strong id="kpi-completion-rate">0%</strong>
+            <span>Completion Rate</span>
+          </article>
+          <article class="kpi-card">
+            <strong id="kpi-overdue">0</strong>
+            <span>Overdue</span>
+          </article>
+          <article class="kpi-card">
+            <strong id="kpi-avg-days">–</strong>
+            <span>Avg. Days to Close</span>
+          </article>
+        </section>
+
+        <section class="board-panel" style="margin-top: 18px;">
+          <div class="panel-head compact">
+            <p class="panel-kicker">Last 14 Days</p>
+            <h3>Tasks completed per day</h3>
+          </div>
+          <div class="trend-chart" id="trend-chart"></div>
+        </section>
+
+        <section class="board-panel" style="margin-top: 18px;">
+          <div class="panel-head compact">
+            <p class="panel-kicker">Team</p>
+            <h3>Per-member performance</h3>
+          </div>
+          <table class="member-kpi-table">
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th>Assigned</th>
+                <th>Completed</th>
+                <th>Pending</th>
+                <th>Overdue</th>
+                <th>Completion Rate</th>
+              </tr>
+            </thead>
+            <tbody id="member-kpi-body"></tbody>
+          </table>
+          <div id="member-kpi-empty" class="empty-state" hidden>No team members yet.</div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/reports.js" defer></script>
+  </body>
+</html>
