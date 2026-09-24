@@ -38,7 +38,7 @@ function taskRowHtml(task) {
           <span class="triage-row-meta">${esc(task.status)} · Ref ${esc(task.row_id)}</span>
         </div>
         <p class="triage-row-task">${esc(task.task)}</p>
-        <div class="triage-row-meta">Assigned to ${esc(task.assignee_name)} &middot; Due ${formatDate(task.effective_due_date || task.due_date)}</div>
+        <div class="triage-row-meta">Assigned to ${esc(task.assignee_name)} &middot; Due ${formatDate(task.new_date || task.due_date)}</div>
       </div>
       <div class="triage-row-actions">
         <button class="action-btn action-done" type="button" data-action="done">Mark Done</button>
