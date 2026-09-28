@@ -709,9 +709,16 @@ class DepartmentRepositoryProtocol(Protocol):
   def upsert_user(self, *, user_id: str, name: str, role: UserRole, active: bool = True) -> UserAccount: ...
   def deactivate_user(self, email: str) -> None: ...
   def list_reporting_relations(self) -> list[ReportingRelation]: ...
-  def get_team_for(self, name: str) -> list[ReportingRelation]: ...
+  def get_team_for(self, email: str) -> list[ReportingRelation]: ...
   def add_reporting_relation(
-    self, *, tl_name: str | None, manager_name: str | None, emp_name: str, emp_id: str
+    self,
+    *,
+    tl_name: str | None,
+    manager_name: str | None,
+    emp_name: str,
+    emp_id: str,
+    tl_email: str | None = None,
+    manager_email: str | None = None,
   ) -> ReportingRelation: ...
   def list_all_tasks(self) -> list[AllTask]: ...
   def list_all_tasks_for_department(self, department: str) -> list[AllTask]: ...
@@ -812,7 +819,7 @@ class DepartmentTaskService:
   def get_team(self, login: LoginResult) -> list[ReportingRelation]:
     if login.role == UserRole.ADMIN:
       return self._repository.list_reporting_relations()
-    return self._repository.get_team_for(login.name)
+    return self._repository.get_team_for(login.email)
 
   def assign_task(
     self,
@@ -972,19 +979,32 @@ class DepartmentTaskService:
     return self._repository.list_reporting_relations()
 
   def add_reporting_relation(
-    self, *, tl_name: str | None, manager_name: str | None, emp_name: str, emp_id: str
+    self,
+    *,
+    tl_name: str | None,
+    manager_name: str | None,
+    emp_name: str,
+    emp_id: str,
+    tl_email: str | None = None,
+    manager_email: str | None = None,
   ) -> ReportingRelation:
     clean_emp_name = emp_name.strip()
     clean_emp_id = emp_id.strip()
+    clean_tl_email = (tl_email or "").strip()
+    clean_manager_email = (manager_email or "").strip()
     if not clean_emp_name:
       raise ValueError("Employee name is required")
     if not clean_emp_id:
       raise ValueError("Employee email/id is required")
     if not (tl_name or "").strip() and not (manager_name or "").strip():
       raise ValueError("At least a TL or a Manager must be set")
+    if not clean_tl_email and not clean_manager_email:
+      raise ValueError("At least a TL email or a Manager email must be set — team lookups match on email")
     return self._repository.add_reporting_relation(
       tl_name=(tl_name or "").strip() or None,
       manager_name=(manager_name or "").strip() or None,
       emp_name=clean_emp_name,
       emp_id=clean_emp_id.lower(),
+      tl_email=clean_tl_email.lower() or None,
+      manager_email=clean_manager_email.lower() or None,
     )

@@ -77,6 +77,8 @@ class ReportingRelationPayload(BaseModel):
   manager_name: str | None = None
   emp_name: str = Field(min_length=1)
   emp_id: str = Field(min_length=1)
+  tl_email: str | None = None
+  manager_email: str | None = None
 
 
 def create_app(settings: Settings | None = None, container: "AppContainer" | None = None) -> FastAPI:
@@ -385,6 +387,7 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
       relation = app.state.container.department_service.add_reporting_relation(
         tl_name=payload.tl_name, manager_name=payload.manager_name,
         emp_name=payload.emp_name, emp_id=payload.emp_id,
+        tl_email=payload.tl_email, manager_email=payload.manager_email,
       )
     except ValueError as exc:
       raise HTTPException(status_code=400, detail=str(exc)) from exc

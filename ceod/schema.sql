@@ -111,8 +111,17 @@ CREATE TABLE IF NOT EXISTS `{project}.{dataset}.Reporting_to` (
   TL_Name STRING,
   Manager_Name STRING,
   Emp_Name STRING NOT NULL,
-  Emp_id STRING NOT NULL
+  Emp_id STRING NOT NULL,
+  TL_Email STRING,
+  Manager_Email STRING
 );
+
+-- Team lookups (get_team_for) match on TL_Email/Manager_Email against the
+-- logged-in user's email, not on TL_Name/Manager_Name — names alone can't
+-- disambiguate a login, and a management user's name never resembles their
+-- own email.
+ALTER TABLE `{project}.{dataset}.Reporting_to` ADD COLUMN IF NOT EXISTS TL_Email STRING;
+ALTER TABLE `{project}.{dataset}.Reporting_to` ADD COLUMN IF NOT EXISTS Manager_Email STRING;
 
 CREATE TABLE IF NOT EXISTS `{project}.{dataset}.Users` (
   user_id STRING NOT NULL,

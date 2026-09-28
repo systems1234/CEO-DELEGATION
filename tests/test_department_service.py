@@ -67,11 +67,17 @@ class FakeDepartmentRepository:
   def list_reporting_relations(self) -> list[ReportingRelation]:
     return list(self.reporting)
 
-  def get_team_for(self, name: str) -> list[ReportingRelation]:
-    return [r for r in self.reporting if r.tl_name == name or r.manager_name == name]
+  def get_team_for(self, email: str) -> list[ReportingRelation]:
+    clean_email = email.strip().lower()
+    return [r for r in self.reporting if r.tl_email == clean_email or r.manager_email == clean_email]
 
-  def add_reporting_relation(self, *, tl_name, manager_name, emp_name, emp_id) -> ReportingRelation:
-    relation = ReportingRelation(tl_name=tl_name, manager_name=manager_name, emp_name=emp_name, emp_id=emp_id)
+  def add_reporting_relation(
+    self, *, tl_name, manager_name, emp_name, emp_id, tl_email=None, manager_email=None
+  ) -> ReportingRelation:
+    relation = ReportingRelation(
+      tl_name=tl_name, manager_name=manager_name, emp_name=emp_name, emp_id=emp_id,
+      tl_email=tl_email, manager_email=manager_email,
+    )
     self.reporting.append(relation)
     return relation
 
@@ -235,7 +241,10 @@ class DepartmentTaskServiceTests(unittest.TestCase):
     )
     self.repo.users["tl@example.com"] = UserAccount(user_id="tl@example.com", name="Priya TL", role=UserRole.TL, active=True)
     self.repo.reporting.append(
-      ReportingRelation(tl_name="Priya TL", manager_name=None, emp_name="Rahul Doer", emp_id="doer@example.com")
+      ReportingRelation(
+        tl_name="Priya TL", manager_name=None, emp_name="Rahul Doer", emp_id="doer@example.com",
+        tl_email="tl@example.com",
+      )
     )
     self.repo.all_tasks["TASK1"] = make_task()
 
@@ -315,7 +324,10 @@ class DepartmentTaskServiceTests(unittest.TestCase):
       comments="", due_date=None, priority=TaskPriority.MEDIUM,
     )
     self.repo.reporting.append(
-      ReportingRelation(tl_name="Priya TL", manager_name=None, emp_name="Second Doer", emp_id="doer2@example.com")
+      ReportingRelation(
+        tl_name="Priya TL", manager_name=None, emp_name="Second Doer", emp_id="doer2@example.com",
+        tl_email="tl@example.com",
+      )
     )
     second = self.service.assign_task(
       login=self.tl_login, task_id="TASK1", assigned_to_doer="doer2@example.com",
@@ -442,14 +454,31 @@ class DepartmentTaskServiceTests(unittest.TestCase):
 
   def test_add_reporting_relation_requires_tl_or_manager(self) -> None:
     with self.assertRaises(ValueError):
-      self.service.add_reporting_relation(tl_name=None, manager_name=None, emp_name="X", emp_id="x@example.com")
+      self.service.add_reporting_relation(
+        tl_name=None, manager_name=None, emp_name="X", emp_id="x@example.com", tl_email="tl@example.com"
+      )
+
+  def test_add_reporting_relation_requires_an_email(self) -> None:
+    with self.assertRaises(ValueError):
+      self.service.add_reporting_relation(
+        tl_name="Priya TL", manager_name=None, emp_name="X", emp_id="x@example.com"
+      )
 
   def test_add_reporting_relation_happy_path(self) -> None:
     relation = self.service.add_reporting_relation(
-      tl_name="Priya TL", manager_name=None, emp_name="New Doer", emp_id="NEW@Example.com"
+      tl_name="Priya TL", manager_name=None, emp_name="New Doer", emp_id="NEW@Example.com",
+      tl_email="TL@Example.com",
     )
     self.assertEqual(relation.emp_id, "new@example.com")
+    self.assertEqual(relation.tl_email, "tl@example.com")
     self.assertIn(relation, self.repo.reporting)
+
+  def test_get_team_matches_by_email_not_name(self) -> None:
+    # A second TL who happens to share Priya TL's display name must not see
+    # her team — matching is strictly on TL_Email/Manager_Email.
+    impostor_login = LoginResult(email="impostor@example.com", name="Priya TL", role=UserRole.TL, department="Sales")
+    self.assertEqual(self.service.get_team(impostor_login), [])
+    self.assertEqual([m.emp_id for m in self.service.get_team(self.tl_login)], ["doer@example.com"])
 
 
 class DepartmentAppRouteTests(unittest.TestCase):
@@ -466,7 +495,10 @@ class DepartmentAppRouteTests(unittest.TestCase):
     self.repo.users["tl@example.com"] = UserAccount(user_id="tl@example.com", name="Priya TL", role=UserRole.TL, active=True)
     self.repo.users["admin@example.com"] = UserAccount(user_id="admin@example.com", name="Admin", role=UserRole.ADMIN, active=True)
     self.repo.reporting.append(
-      ReportingRelation(tl_name="Priya TL", manager_name=None, emp_name="Rahul Doer", emp_id="doer@example.com")
+      ReportingRelation(
+        tl_name="Priya TL", manager_name=None, emp_name="Rahul Doer", emp_id="doer@example.com",
+        tl_email="tl@example.com",
+      )
     )
     self.repo.all_tasks["TASK1"] = make_task()
 

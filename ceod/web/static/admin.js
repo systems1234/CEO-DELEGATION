@@ -84,7 +84,9 @@
           (r) => `
         <tr>
           <td>${esc(r.tl_name || "—")}</td>
+          <td>${esc(r.tl_email || "—")}</td>
           <td>${esc(r.manager_name || "—")}</td>
+          <td>${esc(r.manager_email || "—")}</td>
           <td>${esc(r.emp_name)}</td>
           <td>${esc(r.emp_id)}</td>
         </tr>
@@ -127,7 +129,9 @@
         method: "POST",
         body: JSON.stringify({
           tl_name: document.getElementById("reporting-tl").value || null,
+          tl_email: document.getElementById("reporting-tl-email").value || null,
           manager_name: document.getElementById("reporting-manager").value || null,
+          manager_email: document.getElementById("reporting-manager-email").value || null,
           emp_name: document.getElementById("reporting-emp-name").value,
           emp_id: document.getElementById("reporting-emp-id").value,
         }),

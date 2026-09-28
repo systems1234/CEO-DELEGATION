@@ -249,6 +249,8 @@ class ReportingRelation:
   manager_name: str | None
   emp_name: str
   emp_id: str
+  tl_email: str | None = None
+  manager_email: str | None = None
 
 
 @dataclass(frozen=True)

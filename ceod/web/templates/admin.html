@@ -69,16 +69,26 @@
             <h2 class="panel-title">Reporting (Team Structure)</h2>
           </div>
           <p class="content-subtitle" style="margin-top:-8px;">
-            One row per employee. Set their TL and/or Manager so assigning a task shows the right team list.
+            One row per employee. Set their TL and/or Manager (name + email) so assigning a task shows the
+            right team list — team lookups match on the logged-in TL/Manager's email, so the email field is
+            required for whichever of TL/Manager you set.
           </p>
-          <form id="reporting-form" style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 12px; align-items: end; margin: 14px 0 18px;">
+          <form id="reporting-form" style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr auto; gap: 12px; align-items: end; margin: 14px 0 18px;">
             <label class="field" style="margin-bottom:0;">
               <span>TL name</span>
               <input type="text" id="reporting-tl" placeholder="Optional" />
             </label>
             <label class="field" style="margin-bottom:0;">
+              <span>TL email</span>
+              <input type="email" id="reporting-tl-email" placeholder="tl@gempundit.com" />
+            </label>
+            <label class="field" style="margin-bottom:0;">
               <span>Manager name</span>
               <input type="text" id="reporting-manager" placeholder="Optional" />
+            </label>
+            <label class="field" style="margin-bottom:0;">
+              <span>Manager email</span>
+              <input type="email" id="reporting-manager-email" placeholder="manager@gempundit.com" />
             </label>
             <label class="field" style="margin-bottom:0;">
               <span>Employee name</span>
@@ -94,7 +104,7 @@
           <div id="reporting-loading" class="loading-state">Loading team structure…</div>
           <table class="data-table" id="reporting-table" hidden>
             <thead>
-              <tr><th>TL</th><th>Manager</th><th>Employee</th><th>Employee Email</th></tr>
+              <tr><th>TL</th><th>TL Email</th><th>Manager</th><th>Manager Email</th><th>Employee</th><th>Employee Email</th></tr>
             </thead>
             <tbody id="reporting-body"></tbody>
           </table>

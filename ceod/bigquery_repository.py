@@ -557,20 +557,24 @@ class GoogleBigQueryRepository:
 
   def list_reporting_relations(self) -> list[ReportingRelation]:
     rows = self._client.query(
-      f"SELECT TL_Name, Manager_Name, Emp_Name, Emp_id FROM `{self._table('Reporting_to')}` ORDER BY Emp_Name"
+      f"""
+      SELECT TL_Name, Manager_Name, Emp_Name, Emp_id, TL_Email, Manager_Email
+      FROM `{self._table('Reporting_to')}` ORDER BY Emp_Name
+      """
     ).result()
     return [self._reporting_relation_from_row(row) for row in rows]
 
-  def get_team_for(self, name: str) -> list[ReportingRelation]:
-    """Doers reporting to this TL or Manager (matched by name)."""
+  def get_team_for(self, email: str) -> list[ReportingRelation]:
+    """Doers reporting to this TL or Manager (matched by the login's email)."""
     job_config = bigquery.QueryJobConfig(
-      query_parameters=[bigquery.ScalarQueryParameter("name", "STRING", name.strip())]
+      query_parameters=[bigquery.ScalarQueryParameter("email", "STRING", email.strip().lower())]
     )
     rows = list(
       self._client.query(
         f"""
-        SELECT TL_Name, Manager_Name, Emp_Name, Emp_id FROM `{self._table('Reporting_to')}`
-        WHERE TL_Name = @name OR Manager_Name = @name
+        SELECT TL_Name, Manager_Name, Emp_Name, Emp_id, TL_Email, Manager_Email
+        FROM `{self._table('Reporting_to')}`
+        WHERE LOWER(TL_Email) = @email OR LOWER(Manager_Email) = @email
         ORDER BY Emp_Name
         """,
         job_config=job_config,
@@ -579,7 +583,14 @@ class GoogleBigQueryRepository:
     return [self._reporting_relation_from_row(row) for row in rows]
 
   def add_reporting_relation(
-    self, *, tl_name: str | None, manager_name: str | None, emp_name: str, emp_id: str
+    self,
+    *,
+    tl_name: str | None,
+    manager_name: str | None,
+    emp_name: str,
+    emp_id: str,
+    tl_email: str | None = None,
+    manager_email: str | None = None,
   ) -> ReportingRelation:
     job_config = bigquery.QueryJobConfig(
       query_parameters=[
@@ -587,16 +598,25 @@ class GoogleBigQueryRepository:
         bigquery.ScalarQueryParameter("manager_name", "STRING", manager_name.strip() if manager_name else None),
         bigquery.ScalarQueryParameter("emp_name", "STRING", emp_name.strip()),
         bigquery.ScalarQueryParameter("emp_id", "STRING", emp_id.strip()),
+        bigquery.ScalarQueryParameter("tl_email", "STRING", tl_email.strip().lower() if tl_email else None),
+        bigquery.ScalarQueryParameter("manager_email", "STRING", manager_email.strip().lower() if manager_email else None),
       ]
     )
     self._client.query(
       f"""
-      INSERT INTO `{self._table('Reporting_to')}` (TL_Name, Manager_Name, Emp_Name, Emp_id)
-      VALUES (@tl_name, @manager_name, @emp_name, @emp_id)
+      INSERT INTO `{self._table('Reporting_to')}` (TL_Name, Manager_Name, Emp_Name, Emp_id, TL_Email, Manager_Email)
+      VALUES (@tl_name, @manager_name, @emp_name, @emp_id, @tl_email, @manager_email)
       """,
       job_config=job_config,
     ).result()
-    return ReportingRelation(tl_name=tl_name, manager_name=manager_name, emp_name=emp_name, emp_id=emp_id)
+    return ReportingRelation(
+      tl_name=tl_name,
+      manager_name=manager_name,
+      emp_name=emp_name,
+      emp_id=emp_id,
+      tl_email=tl_email.strip().lower() if tl_email else None,
+      manager_email=manager_email.strip().lower() if manager_email else None,
+    )
 
   # -- All_Tasks (LLM-posted, department-level) -------------------------------
 
@@ -966,7 +986,12 @@ class GoogleBigQueryRepository:
 
   def _reporting_relation_from_row(self, row: bigquery.table.Row) -> ReportingRelation:
     return ReportingRelation(
-      tl_name=row.TL_Name, manager_name=row.Manager_Name, emp_name=row.Emp_Name, emp_id=row.Emp_id
+      tl_name=row.TL_Name,
+      manager_name=row.Manager_Name,
+      emp_name=row.Emp_Name,
+      emp_id=row.Emp_id,
+      tl_email=row.TL_Email,
+      manager_email=row.Manager_Email,
     )
 
   def _all_task_from_row(self, row: bigquery.table.Row) -> AllTask:
