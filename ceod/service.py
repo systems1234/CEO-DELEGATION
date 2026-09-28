@@ -810,6 +810,8 @@ class DepartmentTaskService:
     return items
 
   def get_team(self, login: LoginResult) -> list[ReportingRelation]:
+    if login.role == UserRole.ADMIN:
+      return self._repository.list_reporting_relations()
     return self._repository.get_team_for(login.name)
 
   def assign_task(

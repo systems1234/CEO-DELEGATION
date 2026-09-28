@@ -272,6 +272,11 @@ class DepartmentTaskServiceTests(unittest.TestCase):
     items = self.service.get_department_queue(admin_login)
     self.assertEqual({item.task.task_id for item in items}, {"TASK1", "OTHER"})
 
+  def test_admin_sees_all_reporting_relations_as_team(self) -> None:
+    admin_login = LoginResult(email="admin@example.com", name="Admin", role=UserRole.ADMIN, department=None)
+    team = self.service.get_team(admin_login)
+    self.assertEqual([member.emp_id for member in team], ["doer@example.com"])
+
   def test_assign_task_mints_doer_task_id_and_first_update(self) -> None:
     assignment = self.service.assign_task(
       login=self.tl_login, task_id="TASK1", assigned_to_doer="doer@example.com",
