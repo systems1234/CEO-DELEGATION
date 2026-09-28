@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ app_title }}</title>
+    <meta name="description" content="Overdue and due-today tasks, grouped by date and priority." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/dashboard.css" />
+  </head>
+  <body class="dashboard-page">
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <div class="page-shell dashboard-shell">
+      {% include "_nav.html" %}
+
+      <main id="main-content" class="workspace-panel" style="margin-top: 18px;">
+        <div id="triage-error" class="board-message board-message-error" hidden>
+          Could not load today's priorities. Check the API and refresh.
+        </div>
+
+        <section class="triage-section">
+          <div class="triage-section-head">
+            <h2 class="triage-section-title is-overdue">Overdue</h2>
+            <span class="triage-section-count" id="overdue-count">0 tasks</span>
+          </div>
+          <div id="overdue-groups"></div>
+          <div id="overdue-empty" class="empty-state" hidden>Nothing overdue. Great work.</div>
+        </section>
+
+        <section class="triage-section" style="margin-top: 28px;">
+          <div class="triage-section-head">
+            <h2 class="triage-section-title">Due Today</h2>
+            <span class="triage-section-count" id="today-count">0 tasks</span>
+          </div>
+          <div class="triage-row-list" id="today-list"></div>
+          <div id="today-empty" class="empty-state" hidden>Nothing due today.</div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/task-actions.js" defer></script>
+    <script src="/static/home.js" defer></script>
+  </body>
+</html>

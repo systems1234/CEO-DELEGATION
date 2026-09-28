@@ -4,7 +4,8 @@ import hmac
 import json
 import logging
 from contextlib import asynccontextmanager
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -18,6 +19,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
 from ceod.config import Settings
+from ceod.models import LoginResult, TaskPriority, UserRole
 
 if TYPE_CHECKING:
   from ceod.container import AppContainer
@@ -25,15 +27,15 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 WEB_ROOT = Path(__file__).resolve().parent / "web"
 TEMPLATES = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
-PROTECTED_DASHBOARD_PATHS = frozenset({"/", "/chat", "/api/dashboard", "/api/tasks", "/api/chats", "/api/send", "/api/send-media", "/api/members"})
+
+# Everything not listed here requires a valid dashboard session when
+# dashboard_auth_enabled is true (denylist of public paths, rather than an
+# allowlist of protected ones, since the route surface keeps growing).
+PUBLIC_PATHS = frozenset({"/login", "/auth/login", "/auth/callback", "/logout", "/healthz", "/webhook"})
+PUBLIC_PREFIXES = ("/static/",)
+
 SESSION_COOKIE = "ceod_session"
 SESSION_MAX_AGE = 60 * 60 * 24  # 24 hours
-
-
-class TaskCreatePayload(BaseModel):
-  assignee: str = Field(min_length=1)
-  task: str = Field(min_length=1)
-  due_date: str | None = None
 
 
 class SendTextPayload(BaseModel):
@@ -41,9 +43,40 @@ class SendTextPayload(BaseModel):
   message: str = Field(min_length=1)
 
 
-class MemberCreatePayload(BaseModel):
+class AssignTaskPayload(BaseModel):
+  assigned_to_doer: str = Field(min_length=1)
+  comments: str = ""
+  due_date: str | None = None
+  priority: str = "Medium"
+
+
+class ReviseDatePayload(BaseModel):
+  revised_date: str = Field(min_length=1)
+
+
+class DoerCompletePayload(BaseModel):
+  doer_task_id: str = Field(min_length=1)
+  comments: str = ""
+
+
+class DoerUpdatePayload(BaseModel):
+  doer_task_id: str = Field(min_length=1)
+  task_update: str = Field(min_length=1)
+  comments: str = ""
+
+
+class UpsertUserPayload(BaseModel):
+  email: str = Field(min_length=1)
   name: str = Field(min_length=1)
-  number: str = Field(min_length=1)
+  role: str = Field(min_length=1)
+  active: bool = True
+
+
+class ReportingRelationPayload(BaseModel):
+  tl_name: str | None = None
+  manager_name: str | None = None
+  emp_name: str = Field(min_length=1)
+  emp_id: str = Field(min_length=1)
 
 
 def create_app(settings: Settings | None = None, container: "AppContainer" | None = None) -> FastAPI:
@@ -66,7 +99,7 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
     finally:
       app.state.container.close()
 
-  app = FastAPI(title="CEO Delegation Service", version="1.0.0", lifespan=lifespan)
+  app = FastAPI(title="CEO Delegation Service", version="2.0.0", lifespan=lifespan)
   app.state.container = resolved_container
   app.state.oauth = oauth
   app.add_middleware(
@@ -79,17 +112,19 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
 
   @app.middleware("http")
   async def protect_dashboard_routes(request: Request, call_next):
-    if _is_protected_dashboard_path(request.url.path):
+    if not _is_public_path(request.url.path):
       settings = app.state.container.settings
       if getattr(settings, "dashboard_auth_enabled", False):
-        if not _has_valid_session(request, settings):
+        if _current_login(request, settings) is None:
           next_url = request.url.path
           return RedirectResponse(url=f"/login?next={next_url}", status_code=302)
 
     response = await call_next(request)
-    if _is_protected_dashboard_path(request.url.path):
+    if not _is_public_path(request.url.path):
       response.headers["Cache-Control"] = "no-store"
     return response
+
+  # -- auth -----------------------------------------------------------------
 
   @app.get("/login", response_class=HTMLResponse)
   def login_page(request: Request, next: str = "/", error: str = "") -> HTMLResponse:
@@ -117,12 +152,20 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
 
     email = str(userinfo.get("email", "")).strip().lower()
     email_verified = bool(userinfo.get("email_verified", False))
-    if not email or not email_verified or not _is_allowed_google_account(email, settings):
-      LOGGER.warning("Rejected Google sign-in for email=%s", email)
-      return RedirectResponse(url="/login?error=Your+Google+account+is+not+authorised+for+this+dashboard.", status_code=302)
+    if not email or not email_verified:
+      LOGGER.warning("Rejected Google sign-in — unverified or missing email")
+      return RedirectResponse(url="/login?error=Your+Google+account+could+not+be+verified.", status_code=302)
 
-    token_value = _make_session_token(email, settings)
-    response = RedirectResponse(url=next_url, status_code=302)
+    login = app.state.container.department_service.resolve_login(email)
+    if login is None:
+      LOGGER.warning("Rejected sign-in for email=%s (no ceo_del_sys access on employee record)", email)
+      return RedirectResponse(
+        url="/login?error=Your+account+does+not+have+access+to+this+system.", status_code=302
+      )
+
+    token_value = _make_session_token(login, settings)
+    destination = next_url if next_url.startswith("/") else "/"
+    response = RedirectResponse(url=destination, status_code=302)
     response.set_cookie(
       SESSION_COOKIE, token_value,
       max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", secure=True,
@@ -139,70 +182,219 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
   def healthz() -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
-  @app.get("/", response_class=HTMLResponse)
-  def dashboard(request: Request) -> HTMLResponse:
+  # -- pages ------------------------------------------------------------------
+
+  @app.get("/")
+  def root(request: Request) -> Response:
+    login = _current_login(request, app.state.container.settings)
+    if login is None:
+      return RedirectResponse(url="/login", status_code=302)
+    return RedirectResponse(url="/department-tasks" if login.is_management else "/my-tasks", status_code=302)
+
+  @app.get("/department-tasks", response_class=HTMLResponse)
+  def department_tasks_page(request: Request) -> Response:
+    login = _current_login(request, app.state.container.settings)
+    if login is None:
+      return RedirectResponse(url="/login", status_code=302)
+    if not login.is_management:
+      return RedirectResponse(url="/my-tasks", status_code=302)
     return TEMPLATES.TemplateResponse(
       request=request,
-      name="dashboard.html",
+      name="department_tasks.html",
       context={
-        "app_title": "CEO Mission Control",
-        "api_dashboard_url": "/api/dashboard",
-        "api_task_url": "/api/tasks",
+        "app_title": "CEO Mission Control - Department Tasks",
+        "active_page": "department-tasks",
+        "login": login,
+        "is_admin": login.role == UserRole.ADMIN,
       },
     )
 
-  @app.get("/api/dashboard")
-  def dashboard_snapshot() -> JSONResponse:
-    snapshot = app.state.container.service.get_dashboard_snapshot()
-    return JSONResponse(_serialise_snapshot(snapshot))
-
-  @app.post("/api/tasks", status_code=201)
-  def assign_task(payload: TaskCreatePayload) -> JSONResponse:
-    try:
-      task = app.state.container.service.assign_task(
-        assignee=payload.assignee,
-        task=payload.task,
-        due_date=payload.due_date,
-        notify_ceo=False,
-        notify_assignee=True,
-      )
-    except ValueError as exc:
-      raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    snapshot = app.state.container.service.get_dashboard_snapshot()
-    return JSONResponse(
-      {
-        "task": _serialise_task(task),
-        "stats": _serialise_snapshot(snapshot)["stats"],
+  @app.get("/my-tasks", response_class=HTMLResponse)
+  def my_tasks_page(request: Request) -> Response:
+    login = _current_login(request, app.state.container.settings)
+    if login is None:
+      return RedirectResponse(url="/login", status_code=302)
+    return TEMPLATES.TemplateResponse(
+      request=request,
+      name="my_tasks.html",
+      context={
+        "app_title": "CEO Mission Control - My Tasks",
+        "active_page": "my-tasks",
+        "login": login,
+        "is_admin": login.role == UserRole.ADMIN,
       },
-      status_code=201,
     )
 
-  @app.post("/api/members", status_code=201)
-  def add_member(payload: MemberCreatePayload) -> JSONResponse:
-    try:
-      member = app.state.container.service.add_team_member(
-        name=payload.name,
-        number=payload.number,
-      )
-    except ValueError as exc:
-      raise HTTPException(status_code=400, detail=str(exc)) from exc
-    snapshot = app.state.container.service.get_dashboard_snapshot()
-    return JSONResponse(
-      {
-        "member": asdict(member),
-        "stats": _serialise_snapshot(snapshot)["stats"],
-        "members": [asdict(m) for m in snapshot.members],
+  @app.get("/admin", response_class=HTMLResponse)
+  def admin_page(request: Request) -> Response:
+    login = _current_login(request, app.state.container.settings)
+    if login is None:
+      return RedirectResponse(url="/login", status_code=302)
+    if login.role != UserRole.ADMIN:
+      return RedirectResponse(url="/", status_code=302)
+    return TEMPLATES.TemplateResponse(
+      request=request,
+      name="admin.html",
+      context={
+        "app_title": "CEO Mission Control - Admin",
+        "active_page": "admin",
+        "login": login,
+        "is_admin": True,
+        "roles": [role.value for role in UserRole],
       },
-      status_code=201,
     )
 
   @app.get("/chat", response_class=HTMLResponse)
-  def chat_page(request: Request) -> HTMLResponse:
-    return TEMPLATES.TemplateResponse(request=request, name="chat.html", context={"app_title": "CEO Mission Control - Chats"})
+  def chat_page(request: Request) -> Response:
+    login = _current_login(request, app.state.container.settings)
+    if login is None:
+      return RedirectResponse(url="/login", status_code=302)
+    return TEMPLATES.TemplateResponse(
+      request=request,
+      name="chat.html",
+      context={"app_title": "CEO Mission Control - Chats", "login": login, "is_admin": login.role == UserRole.ADMIN},
+    )
+
+  # -- department-task API (TL / Manager / Senior / Admin) ---------------------
+
+  @app.get("/api/department-queue")
+  def department_queue_api(request: Request) -> JSONResponse:
+    login = _require_login(request, app.state.container.settings)
+    _require_management(login)
+    items = app.state.container.department_service.get_department_queue(login)
+    return JSONResponse({"items": [_serialise(item) for item in items]})
+
+  @app.get("/api/team")
+  def team_api(request: Request) -> JSONResponse:
+    login = _require_login(request, app.state.container.settings)
+    _require_management(login)
+    team = app.state.container.department_service.get_team(login)
+    return JSONResponse({"team": [_serialise(member) for member in team]})
+
+  @app.post("/api/department-tasks/{task_id}/assign")
+  def assign_department_task_api(task_id: str, payload: AssignTaskPayload, request: Request) -> JSONResponse:
+    login = _require_login(request, app.state.container.settings)
+    _require_management(login)
+    try:
+      priority = TaskPriority(payload.priority)
+    except ValueError as exc:
+      raise HTTPException(status_code=400, detail=f'Invalid priority "{payload.priority}"') from exc
+    try:
+      assignment = app.state.container.department_service.assign_task(
+        login=login,
+        task_id=task_id,
+        assigned_to_doer=payload.assigned_to_doer,
+        comments=payload.comments,
+        due_date=payload.due_date,
+        priority=priority,
+      )
+    except ValueError as exc:
+      raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse({"assignment": _serialise(assignment)}, status_code=201)
+
+  @app.post("/api/department-tasks/{task_id}/revise")
+  def revise_due_date_api(task_id: str, payload: ReviseDatePayload, request: Request) -> JSONResponse:
+    login = _require_login(request, app.state.container.settings)
+    _require_management(login)
+    try:
+      revision = app.state.container.department_service.revise_due_date(
+        login=login, task_id=task_id, revised_date=payload.revised_date,
+      )
+    except ValueError as exc:
+      raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse({"revision": _serialise(revision)}, status_code=201)
+
+  # -- doer API (Member) --------------------------------------------------------
+
+  @app.get("/api/my-doer-tasks")
+  def my_doer_tasks_api(request: Request) -> JSONResponse:
+    login = _require_login(request, app.state.container.settings)
+    views = app.state.container.department_service.get_my_doer_view(login)
+    return JSONResponse({"tasks": [_serialise_doer_view(view) for view in views]})
+
+  @app.post("/api/doer-tasks/{task_id}/complete")
+  def complete_doer_task_api(task_id: str, payload: DoerCompletePayload, request: Request) -> JSONResponse:
+    login = _require_login(request, app.state.container.settings)
+    try:
+      completion = app.state.container.department_service.submit_completion(
+        login=login, task_id=task_id, doer_task_id=payload.doer_task_id, comments=payload.comments,
+      )
+    except ValueError as exc:
+      raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse({"completion": _serialise(completion)}, status_code=201)
+
+  @app.post("/api/doer-tasks/{task_id}/update")
+  def update_doer_task_api(task_id: str, payload: DoerUpdatePayload, request: Request) -> JSONResponse:
+    login = _require_login(request, app.state.container.settings)
+    try:
+      entry = app.state.container.department_service.submit_update(
+        login=login,
+        task_id=task_id,
+        doer_task_id=payload.doer_task_id,
+        task_update=payload.task_update,
+        comments=payload.comments,
+      )
+    except ValueError as exc:
+      raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse({"update": _serialise(entry)}, status_code=201)
+
+  # -- admin API ----------------------------------------------------------------
+
+  @app.get("/api/admin/users")
+  def list_users_api(request: Request) -> JSONResponse:
+    login = _require_login(request, app.state.container.settings)
+    _require_admin(login)
+    users = app.state.container.department_service.list_users()
+    return JSONResponse({"users": [_serialise(user) for user in users]})
+
+  @app.post("/api/admin/users", status_code=201)
+  def upsert_user_api(payload: UpsertUserPayload, request: Request) -> JSONResponse:
+    login = _require_login(request, app.state.container.settings)
+    _require_admin(login)
+    try:
+      role = UserRole(payload.role)
+    except ValueError as exc:
+      raise HTTPException(status_code=400, detail=f'Invalid role "{payload.role}"') from exc
+    try:
+      user = app.state.container.department_service.upsert_user(
+        user_id=payload.email, name=payload.name, role=role, active=payload.active,
+      )
+    except ValueError as exc:
+      raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse({"user": _serialise(user)}, status_code=201)
+
+  @app.post("/api/admin/users/{email}/deactivate")
+  def deactivate_user_api(email: str, request: Request) -> JSONResponse:
+    login = _require_login(request, app.state.container.settings)
+    _require_admin(login)
+    app.state.container.department_service.deactivate_user(email)
+    return JSONResponse({"ok": True})
+
+  @app.get("/api/admin/reporting")
+  def list_reporting_api(request: Request) -> JSONResponse:
+    login = _require_login(request, app.state.container.settings)
+    _require_admin(login)
+    relations = app.state.container.department_service.list_reporting_relations()
+    return JSONResponse({"relations": [_serialise(r) for r in relations]})
+
+  @app.post("/api/admin/reporting", status_code=201)
+  def add_reporting_api(payload: ReportingRelationPayload, request: Request) -> JSONResponse:
+    login = _require_login(request, app.state.container.settings)
+    _require_admin(login)
+    try:
+      relation = app.state.container.department_service.add_reporting_relation(
+        tl_name=payload.tl_name, manager_name=payload.manager_name,
+        emp_name=payload.emp_name, emp_id=payload.emp_id,
+      )
+    except ValueError as exc:
+      raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse({"relation": _serialise(relation)}, status_code=201)
+
+  # -- chat viewer (unrelated to the task schema, kept as-is) -------------------
 
   @app.get("/api/chats")
-  def get_chats() -> JSONResponse:
+  def get_chats(request: Request) -> JSONResponse:
+    _require_login(request, app.state.container.settings)
     log = app.state.container.service.get_chat_log()
     conversations: dict[str, dict] = {}
     for entry in log:
@@ -215,7 +407,8 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
     return JSONResponse({"conversations": result})
 
   @app.post("/api/send")
-  def send_direct_message(payload: SendTextPayload) -> JSONResponse:
+  def send_direct_message(payload: SendTextPayload, request: Request) -> JSONResponse:
+    _require_login(request, app.state.container.settings)
     try:
       app.state.container.service.send_text_message(to_number=payload.to, body=payload.message)
     except ValueError as exc:
@@ -226,10 +419,12 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
 
   @app.post("/api/send-media")
   async def send_media_message(
+    request: Request,
     to: str = Form(...),
     caption: str = Form(default=""),
     file: UploadFile = File(...),
   ) -> JSONResponse:
+    _require_login(request, app.state.container.settings)
     content = await file.read()
     mime_type = file.content_type or "application/octet-stream"
     filename = file.filename or "upload"
@@ -247,6 +442,8 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
       raise HTTPException(status_code=502, detail=str(exc)) from exc
     return JSONResponse({"ok": True})
 
+  # -- WhatsApp webhook + cron (dormant until Meta/OpenAI creds land) ----------
+
   @app.get("/webhook")
   def webhook_verify(request: Request) -> Response:
     is_valid, body = app.state.container.whatsapp.verify_get(request.query_params)
@@ -255,41 +452,18 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
 
   @app.post("/webhook")
   async def webhook_receive(request: Request) -> Response:
-    LOGGER.debug("WEBHOOK [1/6] hit — client=%s method=%s path=%s",
-                 request.client.host if request.client else "unknown",
-                 request.method, request.url.path)
-    LOGGER.debug("WEBHOOK [2/6] headers=%s", dict(request.headers))
-
     raw_body = await request.body()
-    LOGGER.debug("WEBHOOK [3/6] raw body (%d bytes): %s",
-                 len(raw_body), raw_body.decode("utf-8", errors="replace"))
-
     if not raw_body:
-      LOGGER.warning("WEBHOOK [3/6] empty body — ignoring")
       return PlainTextResponse("OK")
-
     try:
       payload = json.loads(raw_body)
-    except json.JSONDecodeError as exc:
-      LOGGER.warning("WEBHOOK [4/6] JSON parse failed: %s — raw=%s", exc,
-                     raw_body.decode("utf-8", errors="replace")[:500])
+    except json.JSONDecodeError:
       return PlainTextResponse("OK")
 
-    LOGGER.debug("WEBHOOK [4/6] parsed JSON — type=%s keys=%s",
-                 type(payload).__name__,
-                 list(payload.keys()) if isinstance(payload, dict) else "n/a")
-    LOGGER.debug("WEBHOOK [4/6] full payload: %s", json.dumps(payload, ensure_ascii=False))
-
     try:
-      LOGGER.debug("WEBHOOK [5/6] calling parse_incoming_message")
       incoming = app.state.container.whatsapp.parse_incoming_message(payload)
       if incoming is not None:
-        LOGGER.debug("WEBHOOK [5/6] parsed OK — from=%s text=%r", incoming.from_number, incoming.text[:120])
-        LOGGER.debug("WEBHOOK [6/6] dispatching to service.handle_incoming_message")
         app.state.container.service.handle_incoming_message(incoming)
-        LOGGER.debug("WEBHOOK [6/6] service handler returned OK")
-      else:
-        LOGGER.debug("WEBHOOK [5/6] parse_incoming_message returned None — message ignored")
     except Exception:
       LOGGER.exception("WEBHOOK processing failed")
 
@@ -305,21 +479,33 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
   return app
 
 
-def _serialise_snapshot(snapshot: object) -> dict[str, object]:
-  data = asdict(snapshot)
-  data["tasks"] = [_serialise_task_from_dict(task) for task in data["tasks"]]
+# -- JSON serialisation ------------------------------------------------------
+
+
+def _jsonify(value: Any) -> Any:
+  if isinstance(value, Enum):
+    return value.value
+  if isinstance(value, dict):
+    return {k: _jsonify(v) for k, v in value.items()}
+  if isinstance(value, list):
+    return [_jsonify(v) for v in value]
+  return value
+
+
+def _serialise(obj: Any) -> dict[str, Any]:
+  if not is_dataclass(obj):
+    raise TypeError(f"_serialise expects a dataclass instance, got {type(obj)!r}")
+  return _jsonify(asdict(obj))
+
+
+def _serialise_doer_view(view: Any) -> dict[str, Any]:
+  data = _serialise(view)
+  data["effective_due_date"] = view.effective_due_date
+  data["is_completed"] = view.is_completed
   return data
 
 
-def _serialise_task(task: object) -> dict[str, object]:
-  data = asdict(task)
-  return _serialise_task_from_dict(data)
-
-
-def _serialise_task_from_dict(task: dict[str, object]) -> dict[str, object]:
-  status = task["status"]
-  task["status"] = status.value if hasattr(status, "value") else status
-  return task
+# -- container / oauth wiring -------------------------------------------------
 
 
 def _build_runtime_container(settings: Settings | None) -> "AppContainer":
@@ -346,8 +532,11 @@ def _oauth_redirect_uri(request: Request, settings: Settings) -> str:
   return str(request.url_for("auth_callback"))
 
 
-def _is_protected_dashboard_path(path: str) -> bool:
-  return path in PROTECTED_DASHBOARD_PATHS
+def _is_public_path(path: str) -> bool:
+  return path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES)
+
+
+# -- session / login ------------------------------------------------------
 
 
 def _get_serializer(settings: Any) -> URLSafeTimedSerializer:
@@ -355,28 +544,45 @@ def _get_serializer(settings: Any) -> URLSafeTimedSerializer:
   return URLSafeTimedSerializer(secret, salt="ceod-session")
 
 
-def _make_session_token(email: str, settings: Any) -> str:
-  return _get_serializer(settings).dumps(email)
+def _make_session_token(login: LoginResult, settings: Any) -> str:
+  payload = {"email": login.email, "name": login.name, "role": login.role.value, "department": login.department}
+  return _get_serializer(settings).dumps(payload)
 
 
-def _has_valid_session(request: Request, settings: Any) -> bool:
+def _current_login(request: Request, settings: Any) -> LoginResult | None:
   token = request.cookies.get(SESSION_COOKIE)
   if not token:
-    return False
+    return None
   try:
-    _get_serializer(settings).loads(token, max_age=SESSION_MAX_AGE)
-    return True
+    payload = _get_serializer(settings).loads(token, max_age=SESSION_MAX_AGE)
   except (SignatureExpired, BadSignature):
-    return False
+    return None
+  try:
+    return LoginResult(
+      email=payload["email"],
+      name=payload["name"],
+      role=UserRole(payload["role"]),
+      department=payload.get("department"),
+    )
+  except (KeyError, ValueError, TypeError):
+    return None
 
 
-def _is_allowed_google_account(email: str, settings: Any) -> bool:
-  allowed_domain = getattr(settings, "allowed_google_domain", None)
-  if allowed_domain and email.endswith(f"@{allowed_domain.strip().lower()}"):
-    return True
-  allowed_emails = getattr(settings, "allowed_google_emails", None) or ""
-  allowlist = {addr.strip().lower() for addr in allowed_emails.split(",") if addr.strip()}
-  return email in allowlist
+def _require_login(request: Request, settings: Any) -> LoginResult:
+  login = _current_login(request, settings)
+  if login is None:
+    raise HTTPException(status_code=401, detail="Not signed in")
+  return login
+
+
+def _require_management(login: LoginResult) -> None:
+  if not login.is_management:
+    raise HTTPException(status_code=403, detail="This action requires a TL, Manager, Senior, or Admin account")
+
+
+def _require_admin(login: LoginResult) -> None:
+  if login.role != UserRole.ADMIN:
+    raise HTTPException(status_code=403, detail="This action requires an Admin account")
 
 
 def _require_cron_secret(request: Request, settings: Any) -> None:

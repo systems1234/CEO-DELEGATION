@@ -1,0 +1,58 @@
+<aside class="sidebar" id="app-sidebar">
+  <div class="sidebar-brand">
+    <div class="sidebar-brand-id">
+      <div class="brand-mark">C</div>
+      <span class="brand-name">CEO Mission Control</span>
+    </div>
+    <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Collapse sidebar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"></polyline>
+      </svg>
+    </button>
+  </div>
+
+  <nav class="nav-group" aria-label="Primary">
+    <p class="nav-label">Menu</p>
+    {% if login.is_management %}
+    <a class="nav-item{{ ' is-active' if active_page == 'department-tasks' else '' }}" href="/department-tasks">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+        <line x1="8" y1="9" x2="16" y2="9"></line>
+        <line x1="8" y1="13" x2="16" y2="13"></line>
+        <line x1="8" y1="17" x2="12" y2="17"></line>
+      </svg>
+      <span class="nav-text">Department Tasks</span>
+    </a>
+    {% endif %}
+    <a class="nav-item{{ ' is-active' if active_page == 'my-tasks' else '' }}" href="/my-tasks">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 11l3 3L22 4"></path>
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+      </svg>
+      <span class="nav-text">My Tasks</span>
+    </a>
+    <a class="nav-item{{ ' is-active' if active_page == 'chat' else '' }}" href="/chat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+      </svg>
+      <span class="nav-text">Messages</span>
+    </a>
+    {% if is_admin %}
+    <a class="nav-item{{ ' is-active' if active_page == 'admin' else '' }}" href="/admin">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+      </svg>
+      <span class="nav-text">Admin</span>
+    </a>
+    {% endif %}
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="user-avatar">{{ login.name[:1]|upper }}</div>
+    <div class="user-meta">
+      <div class="user-name">{{ login.name }}</div>
+      <div class="user-role">{{ login.role.value }}</div>
+    </div>
+    <button class="sign-out-btn" type="button" onclick="window.location.href='/logout'">SIGN OUT</button>
+  </div>
+</aside>

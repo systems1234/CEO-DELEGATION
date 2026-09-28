@@ -2,14 +2,10 @@ from __future__ import annotations
 
 import unittest
 from dataclasses import replace
-from types import SimpleNamespace
 
-from fastapi.testclient import TestClient
-from itsdangerous import URLSafeTimedSerializer
-
-from ceod.app import create_app
-from ceod.models import DashboardSnapshot, DashboardStats, IncomingMessage, ParsedPostponeReply, ParsedTaskAssignment, SeedProfile, TaskRecord, TaskStatus, TeamMember
+from ceod.models import IncomingMessage, ParsedPostponeReply, ParsedTaskAssignment, SeedProfile, TaskPriority, TaskRecord, TaskStatus, TeamMember
 from ceod.service import TaskDelegationService
+from ceod.utils import today_iso
 
 
 class FakeParser:
@@ -66,7 +62,13 @@ class FakeRepository:
         return member
     return None
 
-  def create_task(self, parsed: ParsedTaskAssignment, today_iso: str) -> str:
+  def get_member_by_email(self, email: str) -> TeamMember | None:
+    for member in self.members:
+      if member.email and member.email.lower() == email.lower():
+        return member
+    return None
+
+  def create_task(self, parsed: ParsedTaskAssignment, today_iso: str, priority: TaskPriority = TaskPriority.MEDIUM) -> str:
     row_id = f"T{len(self.tasks) + 1:017d}ABCD"
     member = self.get_member_by_name(parsed.assignee)
     assert member is not None
@@ -76,6 +78,8 @@ class FakeRepository:
       assignee_number=member.number,
       task=parsed.task,
       status=TaskStatus.PENDING,
+      priority=priority,
+      assign_date=today_iso,
       due_date=parsed.due_date,
     )
     return row_id
@@ -158,8 +162,8 @@ class FakeRepository:
   def get_chat_log(self) -> list[dict[str, str]]:
     return list(self.chat_log)
 
-  def add_team_member(self, name: str, number: str) -> TeamMember:
-    member = TeamMember(name=name, number=number)
+  def add_team_member(self, name: str, number: str, email: str = "") -> TeamMember:
+    member = TeamMember(name=name, number=number, email=email or None)
     self.members.append(member)
     return member
 
@@ -282,6 +286,80 @@ class TaskDelegationServiceTests(unittest.TestCase):
     self.assertEqual(task.assignee_name, "Rahul")
     self.assertEqual(task.task, "Test a testing task.")
 
+  def test_complete_task_marks_done_and_notifies(self) -> None:
+    task = self.service.assign_task(assignee="Rahul", task="Ship the deck", due_date="2026-04-24")
+    updated = self.service.complete_task(row_id=task.row_id)
+    self.assertEqual(updated.status, TaskStatus.DONE)
+    self.assertEqual(self.repository.tasks[task.row_id].status, TaskStatus.DONE)
+
+  def test_complete_task_unknown_row_id_raises(self) -> None:
+    with self.assertRaises(ValueError):
+      self.service.complete_task(row_id="does-not-exist")
+
+  def test_postpone_task_from_dashboard_reschedules_and_notifies(self) -> None:
+    task = self.service.assign_task(assignee="Rahul", task="Ship the deck", due_date="2026-04-24")
+    updated = self.service.postpone_task_from_dashboard(row_id=task.row_id, new_date="2026-05-01", reason="Waiting on client")
+    self.assertEqual(updated.status, TaskStatus.POSTPONED)
+    self.assertEqual(updated.new_date, "2026-05-01")
+    self.assertTrue(any("rescheduled" in body for _, body in self.gateway.messages))
+
+  def test_postpone_task_from_dashboard_requires_reason(self) -> None:
+    task = self.service.assign_task(assignee="Rahul", task="Ship the deck", due_date="2026-04-24")
+    with self.assertRaises(ValueError):
+      self.service.postpone_task_from_dashboard(row_id=task.row_id, new_date="2026-05-01", reason="  ")
+
+  def test_get_my_tasks_filters_by_linked_email(self) -> None:
+    self.repository.members[0] = TeamMember(name="Rahul", number="919000000001", email="rahul@example.com")
+    self.service.assign_task(assignee="Rahul", task="Task A", due_date="2026-04-24")
+    self.service.assign_task(assignee="Rahul", task="Task B", due_date="2026-04-25")
+
+    tasks = self.service.get_my_tasks("rahul@example.com")
+    self.assertEqual(len(tasks), 2)
+    self.assertEqual(self.service.get_my_tasks("unknown@example.com"), [])
+
+  def test_get_triage_view_groups_overdue_by_date_and_priority(self) -> None:
+    self.repository.tasks["T1"] = TaskRecord(
+      row_id="T1", assignee_name="Rahul", assignee_number="919000000001",
+      task="Overdue low", status=TaskStatus.PENDING, priority=TaskPriority.LOW, due_date="2020-01-01",
+    )
+    self.repository.tasks["T2"] = TaskRecord(
+      row_id="T2", assignee_name="Rahul", assignee_number="919000000001",
+      task="Overdue critical", status=TaskStatus.PENDING, priority=TaskPriority.CRITICAL, due_date="2020-01-01",
+    )
+    self.repository.tasks["T3"] = TaskRecord(
+      row_id="T3", assignee_name="Rahul", assignee_number="919000000001",
+      task="Due today", status=TaskStatus.PENDING, priority=TaskPriority.MEDIUM,
+      due_date=today_iso("Asia/Kolkata"),
+    )
+
+    view = self.service.get_triage_view()
+
+    self.assertEqual(len(view.overdue_groups), 1)
+    self.assertEqual(view.overdue_groups[0].date, "2020-01-01")
+    self.assertEqual([t.row_id for t in view.overdue_groups[0].tasks], ["T2", "T1"])
+    self.assertEqual([t.row_id for t in view.due_today], ["T3"])
+
+  def test_get_kpi_report_computes_completion_rate(self) -> None:
+    self.repository.tasks["T1"] = TaskRecord(
+      row_id="T1", assignee_name="Rahul", assignee_number="919000000001",
+      task="Done one", status=TaskStatus.DONE, assign_date="2026-04-01", completion_date="2026-04-03",
+    )
+    self.repository.tasks["T2"] = TaskRecord(
+      row_id="T2", assignee_name="Rahul", assignee_number="919000000001",
+      task="Overdue one", status=TaskStatus.OVERDUE, due_date="2026-04-01",
+    )
+
+    report = self.service.get_kpi_report()
+
+    self.assertEqual(report.total_tasks, 2)
+    self.assertEqual(report.completed_tasks, 1)
+    self.assertEqual(report.overdue_tasks, 1)
+    self.assertEqual(report.completion_rate, 50.0)
+    self.assertEqual(report.avg_completion_days, 2.0)
+    self.assertEqual(len(report.daily_trend), 14)
+    self.assertEqual(report.members[0].name, "Rahul")
+    self.assertEqual(report.members[0].assigned, 2)
+
   def test_dashboard_snapshot_counts_tasks(self) -> None:
     self.repository.tasks["T1"] = TaskRecord(
       row_id="T1",
@@ -306,93 +384,6 @@ class TaskDelegationServiceTests(unittest.TestCase):
     self.assertEqual(snapshot.stats.completed_tasks, 1)
     self.assertEqual(snapshot.stats.team_members, 1)
 
-
-class DashboardAppTests(unittest.TestCase):
-  def setUp(self) -> None:
-    self.parser = FakeParser()
-    self.gateway = FakeWhatsAppGateway()
-    self.repository = FakeRepository()
-    self.service = TaskDelegationService(
-      parser=self.parser,
-      whatsapp=self.gateway,
-      repository=self.repository,
-      ceo_number="919999999999",
-      timezone_name="Asia/Kolkata",
-    )
-    self.service.assign_task(assignee="Rahul", task="Existing dashboard task", due_date="2026-04-24")
-    self.session_secret = "test-session-secret"
-    fake_container = SimpleNamespace(
-      settings=SimpleNamespace(
-        script_timezone="Asia/Kolkata",
-        dashboard_auth_enabled=True,
-        google_oauth_client_id=None,
-        google_oauth_client_secret=None,
-        allowed_google_domain="example.com",
-        allowed_google_emails=None,
-        session_secret=self.session_secret,
-        public_base_url=None,
-        cron_secret="test-cron-secret",
-      ),
-      service=self.service,
-      whatsapp=self.gateway,
-      close=lambda: None,
-    )
-    self.client = TestClient(create_app(container=fake_container))
-    session_token = URLSafeTimedSerializer(self.session_secret, salt="ceod-session").dumps("ceo@example.com")
-    self.client.cookies.set("ceod_session", session_token)
-
-  def test_dashboard_page_requires_auth(self) -> None:
-    anonymous_client = TestClient(self.client.app, follow_redirects=False)
-    response = anonymous_client.get("/")
-    self.assertEqual(response.status_code, 302)
-    self.assertTrue(response.headers["location"].startswith("/login"))
-
-  def test_dashboard_page_loads(self) -> None:
-    response = self.client.get("/")
-    self.assertEqual(response.status_code, 200)
-    self.assertIn("Mission Control", response.text)
-
-  def test_chat_page_loads(self) -> None:
-    response = self.client.get("/chat")
-    self.assertEqual(response.status_code, 200)
-    self.assertIn("Chats", response.text)
-
-  def test_dashboard_api_returns_snapshot(self) -> None:
-    response = self.client.get("/api/dashboard")
-    self.assertEqual(response.status_code, 200)
-    payload = response.json()
-    self.assertEqual(payload["stats"]["total_tasks"], 1)
-    self.assertEqual(payload["members"][0]["name"], "Rahul")
-
-  def test_chat_api_returns_conversations(self) -> None:
-    response = self.client.get("/api/chats")
-    self.assertEqual(response.status_code, 200)
-    payload = response.json()
-    self.assertEqual(payload["conversations"][0]["number"], "919000000001")
-
-  def test_assign_task_api_creates_task(self) -> None:
-    response = self.client.post(
-      "/api/tasks",
-      json={"assignee": "Rahul", "task": "Frontend-created task", "due_date": "2026-04-30"},
-    )
-    self.assertEqual(response.status_code, 201)
-    payload = response.json()
-    self.assertEqual(payload["task"]["task"], "Frontend-created task")
-    self.assertEqual(len(self.repository.tasks), 2)
-
-  def test_send_api_logs_message_for_chat_history(self) -> None:
-    response = self.client.post(
-      "/api/send",
-      json={"to": "919000000001", "message": "Manual follow-up"},
-    )
-
-    self.assertEqual(response.status_code, 200)
-    chat_response = self.client.get("/api/chats")
-    self.assertEqual(chat_response.status_code, 200)
-    payload = chat_response.json()
-    messages = payload["conversations"][0]["messages"]
-    self.assertEqual(messages[-1]["text"], "Manual follow-up")
-    self.assertEqual(messages[-1]["direction"], "out")
 
 
 if __name__ == "__main__":

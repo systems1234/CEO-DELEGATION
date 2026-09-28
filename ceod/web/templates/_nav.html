@@ -1,0 +1,20 @@
+<header class="topbar">
+  <div class="topbar-brand">
+    <p class="eyebrow">CEO Mission Control</p>
+    <h1 class="topbar-title">{{ page_heading }}</h1>
+    <p class="topbar-text">{{ page_subtitle }}</p>
+  </div>
+  <div class="topbar-actions">
+    <nav class="nav-tabs" aria-label="Primary">
+      <a class="nav-tab{{ ' is-active' if active_page == 'home' else '' }}" href="/">Today</a>
+      <a class="nav-tab{{ ' is-active' if active_page == 'board' else '' }}" href="/board">Board</a>
+      <a class="nav-tab{{ ' is-active' if active_page == 'my-tasks' else '' }}" href="/my-tasks">My Tasks</a>
+      <a class="nav-tab{{ ' is-active' if active_page == 'reports' else '' }}" href="/reports">Reports</a>
+      <a class="nav-tab{{ ' is-active' if active_page == 'chat' else '' }}" href="/chat">Messages</a>
+    </nav>
+    {% if current_user_email %}
+    <span class="session-email">{{ current_user_email }}</span>
+    {% endif %}
+    <a class="ghost-button" href="/logout">Sign out</a>
+  </div>
+</header>
