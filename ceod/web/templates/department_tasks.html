@@ -76,7 +76,18 @@
           <input type="hidden" id="assign-task-id" />
           <label class="field">
             <span>Assign to</span>
-            <select id="assign-doer-select" required></select>
+            <div class="combobox" id="assign-doer-combobox">
+              <input
+                type="text"
+                id="assign-doer-search"
+                class="combobox-input"
+                autocomplete="off"
+                placeholder="Type a name to search…"
+                required
+              />
+              <input type="hidden" id="assign-doer-select" />
+              <div class="combobox-options" id="assign-doer-options" hidden></div>
+            </div>
           </label>
           <label class="field">
             <span>Comments</span>

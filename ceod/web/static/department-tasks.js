@@ -14,6 +14,8 @@
   const assignForm = document.getElementById("assign-form");
   const assignTaskIdInput = document.getElementById("assign-task-id");
   const assignDoerSelect = document.getElementById("assign-doer-select");
+  const assignDoerSearch = document.getElementById("assign-doer-search");
+  const assignDoerOptions = document.getElementById("assign-doer-options");
   const assignComments = document.getElementById("assign-comments");
   const assignPriority = document.getElementById("assign-priority");
   const assignDueDate = document.getElementById("assign-due-date");
@@ -114,6 +116,48 @@
     });
   }
 
+  function renderDoerOptions(filterText) {
+    const query = filterText.trim().toLowerCase();
+    const matches = state.team.filter((member) => member.emp_name.toLowerCase().includes(query));
+
+    if (!state.team.length) {
+      assignDoerOptions.innerHTML = '<div class="combobox-option-empty">No team members found — add them in Admin</div>';
+    } else if (!matches.length) {
+      assignDoerOptions.innerHTML = '<div class="combobox-option-empty">No matches</div>';
+    } else {
+      assignDoerOptions.innerHTML = matches
+        .map(
+          (member) =>
+            `<div class="combobox-option" data-emp-id="${esc(member.emp_id)}" data-emp-name="${esc(member.emp_name)}">${esc(member.emp_name)}</div>`
+        )
+        .join("");
+    }
+    assignDoerOptions.hidden = false;
+  }
+
+  assignDoerOptions.addEventListener("click", (event) => {
+    const option = event.target.closest(".combobox-option");
+    if (!option) return;
+    assignDoerSelect.value = option.dataset.empId;
+    assignDoerSearch.value = option.dataset.empName;
+    assignDoerOptions.hidden = true;
+  });
+
+  assignDoerSearch.addEventListener("input", () => {
+    assignDoerSelect.value = "";
+    renderDoerOptions(assignDoerSearch.value);
+  });
+
+  assignDoerSearch.addEventListener("focus", () => renderDoerOptions(assignDoerSearch.value));
+
+  assignDoerSearch.addEventListener("blur", () => {
+    // Delay so a click on an option (which blurs the input first) still registers.
+    setTimeout(() => {
+      assignDoerOptions.hidden = true;
+      if (!assignDoerSelect.value) assignDoerSearch.value = "";
+    }, 150);
+  });
+
   function openAssignModal(item) {
     assignTaskIdInput.value = item.task.task_id;
     assignModalTitle.textContent = item.current_assignment ? "Reassign task" : "Assign task";
@@ -121,12 +165,9 @@
     assignPriority.value = item.task.priority || "Medium";
     assignDueDate.value = "";
     setFormStatus(assignStatus, "");
-    assignDoerSelect.innerHTML = state.team
-      .map((member) => `<option value="${esc(member.emp_id)}">${esc(member.emp_name)}</option>`)
-      .join("");
-    if (!state.team.length) {
-      assignDoerSelect.innerHTML = '<option value="">No team members found — add them in Admin</option>';
-    }
+    assignDoerSelect.value = "";
+    assignDoerSearch.value = "";
+    assignDoerOptions.hidden = true;
     assignModal.hidden = false;
   }
 
@@ -179,6 +220,10 @@
 
   assignForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (!assignDoerSelect.value) {
+      setFormStatus(assignStatus, "Pick a team member from the list.", "error");
+      return;
+    }
     setFormStatus(assignStatus, "Assigning…");
     try {
       await request(`/api/department-tasks/${encodeURIComponent(assignTaskIdInput.value)}/assign`, {

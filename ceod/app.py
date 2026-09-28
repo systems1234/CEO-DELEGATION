@@ -9,6 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from authlib.integrations.base_client.errors import MismatchingStateError
 from authlib.integrations.starlette_client import OAuth
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
@@ -139,7 +140,9 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
     settings = app.state.container.settings
     request.session["ceod_next"] = next if next.startswith("/") else "/"
     redirect_uri = _oauth_redirect_uri(request, settings)
-    return await app.state.oauth.google.authorize_redirect(request, redirect_uri)
+    response = await app.state.oauth.google.authorize_redirect(request, redirect_uri)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
   @app.get("/auth/callback")
   async def auth_callback(request: Request) -> Response:
@@ -148,9 +151,24 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
     try:
       token = await app.state.oauth.google.authorize_access_token(request)
       userinfo = token.get("userinfo") or {}
+    except MismatchingStateError:
+      # A slow cold start can let the browser start (or retry) the top-level
+      # navigation to Google before the state cookie from THIS invocation has
+      # landed, so the callback sees a state that doesn't match. Retry the
+      # redirect once, transparently, rather than making the user click
+      # "Continue with Google" a second time themselves.
+      if request.session.get("ceod_oauth_retried"):
+        LOGGER.warning("OAuth state mismatch persisted after auto-retry")
+        request.session.pop("ceod_oauth_retried", None)
+        return RedirectResponse(url="/login?error=Sign-in+failed.+Please+try+again.", status_code=302)
+      request.session["ceod_oauth_retried"] = True
+      LOGGER.warning("OAuth state mismatch — retrying sign-in once")
+      return RedirectResponse(url=f"/auth/login?next={next_url}", status_code=302)
     except Exception:
       LOGGER.exception("Google OAuth callback failed")
       return RedirectResponse(url="/login?error=Sign-in+failed.+Please+try+again.", status_code=302)
+
+    request.session.pop("ceod_oauth_retried", None)
 
     email = str(userinfo.get("email", "")).strip().lower()
     email_verified = bool(userinfo.get("email_verified", False))
@@ -172,6 +190,7 @@ def create_app(settings: Settings | None = None, container: "AppContainer" | Non
       SESSION_COOKIE, token_value,
       max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", secure=True,
     )
+    response.headers["Cache-Control"] = "no-store"
     return response
 
   @app.get("/logout")
