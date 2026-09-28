@@ -4,34 +4,103 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ app_title }}</title>
-    <meta name="description" content="Tasks assigned to you, with quick mark-done and postpone actions." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/dashboard.css" />
+    <link rel="stylesheet" href="/static/app.css" />
   </head>
-  <body class="dashboard-page">
-    <a class="skip-link" href="#main-content">Skip to content</a>
-    <div class="page-shell dashboard-shell">
-      {% include "_nav.html" %}
+  <body>
+    <div class="app-shell">
+      {% include "_sidebar.html" %}
+      <main class="content">
+        <div class="content-header">
+          <div>
+            <p class="content-eyebrow">Hello, {{ login.name }}</p>
+            <h1 class="content-title">My Tasks</h1>
+            <p class="content-subtitle">Tasks assigned to you. Mark them done or post a progress update.</p>
+          </div>
+          <button class="btn btn-ghost" id="refresh-btn" type="button">Refresh</button>
+        </div>
 
-      <main id="main-content" class="workspace-panel" style="margin-top: 18px;">
-        <div id="my-tasks-error" class="board-message board-message-error" hidden>
-          Could not load your tasks. Check the API and refresh.
-        </div>
-        <div id="my-tasks-unlinked" class="empty-state" hidden>
-          Your Google account (<span id="my-tasks-email"></span>) isn't linked to a team member yet.
-          Ask your admin to add your email on the Board page's "Add member" form.
-        </div>
-        <div class="triage-row-list" id="my-tasks-list"></div>
-        <div id="my-tasks-empty" class="empty-state" hidden>You have no assigned tasks right now.</div>
+        <section class="stat-row">
+          <article class="stat-card is-info">
+            <p class="stat-label">Active</p>
+            <p class="stat-value" id="stat-active">0</p>
+          </article>
+          <article class="stat-card">
+            <p class="stat-label">Completed</p>
+            <p class="stat-value" id="stat-completed">0</p>
+          </article>
+          <article class="stat-card is-danger">
+            <p class="stat-label">Overdue</p>
+            <p class="stat-value" id="stat-overdue">0</p>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Assigned to you</h2>
+          </div>
+          <div id="tasks-error" class="empty-state" hidden>Could not load your tasks. Try refreshing.</div>
+          <div id="tasks-empty" class="empty-state" hidden>You have no assigned tasks right now.</div>
+          <div id="tasks-loading" class="loading-state">Loading your tasks…</div>
+          <div id="tasks-list" hidden></div>
+          <div class="pagination" id="tasks-pagination"></div>
+        </section>
       </main>
     </div>
 
-    <script src="/static/task-actions.js" defer></script>
-    <script src="/static/my-tasks.js" defer></script>
+    <div class="modal-overlay" id="complete-modal" hidden>
+      <div class="modal-card">
+        <h3 class="modal-title">Mark task complete</h3>
+        <form id="complete-form">
+          <input type="hidden" id="complete-task-id" />
+          <input type="hidden" id="complete-doer-task-id" />
+          <label class="field">
+            <span>Comments (optional)</span>
+            <textarea id="complete-comments" placeholder="Anything the TL/Manager should know…"></textarea>
+          </label>
+          <p class="form-status" id="complete-status"></p>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" type="button" id="complete-cancel">Cancel</button>
+            <button class="btn btn-primary" type="submit">Mark Complete</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="update-modal" hidden>
+      <div class="modal-card">
+        <h3 class="modal-title">Post an update</h3>
+        <form id="update-form">
+          <input type="hidden" id="update-task-id" />
+          <input type="hidden" id="update-doer-task-id" />
+          <label class="field">
+            <span>Status</span>
+            <select id="update-status-select">
+              <option value="In Progress">In Progress</option>
+              <option value="Abandon">Abandon</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Comments</span>
+            <textarea id="update-comments" placeholder="What's the latest?"></textarea>
+          </label>
+          <p class="form-status" id="update-status-msg"></p>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" type="button" id="update-cancel">Cancel</button>
+            <button class="btn btn-primary" type="submit">Post Update</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="/static/api.js"></script>
+    <script src="/static/pagination.js"></script>
+    <script src="/static/sidebar.js"></script>
+    <script src="/static/my-tasks.js"></script>
   </body>
 </html>

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ app_title }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      {% include "_sidebar.html" %}
+      <main class="content">
+        <div class="content-header">
+          <div>
+            <p class="content-eyebrow">{{ login.department or "All departments" }}</p>
+            <h1 class="content-title">Department Tasks</h1>
+            <p class="content-subtitle">Tasks posted for your department. Assign them to a doer on your team.</p>
+          </div>
+          <button class="btn btn-ghost" id="refresh-btn" type="button">Refresh</button>
+        </div>
+
+        <section class="stat-row" id="stat-row">
+          <article class="stat-card">
+            <p class="stat-label">Unassigned</p>
+            <p class="stat-value" id="stat-unassigned">0</p>
+          </article>
+          <article class="stat-card is-info">
+            <p class="stat-label">In Progress</p>
+            <p class="stat-value" id="stat-in-progress">0</p>
+          </article>
+          <article class="stat-card">
+            <p class="stat-label">Completed</p>
+            <p class="stat-value" id="stat-completed">0</p>
+          </article>
+          <article class="stat-card is-danger">
+            <p class="stat-label">Abandoned</p>
+            <p class="stat-value" id="stat-abandoned">0</p>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Task Queue</h2>
+          </div>
+          <div id="queue-error" class="empty-state" hidden>Could not load tasks. Try refreshing.</div>
+          <div id="queue-empty" class="empty-state" hidden>No tasks for your department yet.</div>
+          <div id="queue-loading" class="loading-state">Loading tasks…</div>
+          <table class="data-table" id="queue-table" hidden>
+            <thead>
+              <tr>
+                <th>Task</th>
+                <th>Priority</th>
+                <th>CEO Due Date</th>
+                <th>Status</th>
+                <th>Effective Due Date</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="queue-body"></tbody>
+          </table>
+          <div class="pagination" id="queue-pagination"></div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-overlay" id="assign-modal" hidden>
+      <div class="modal-card">
+        <h3 class="modal-title" id="assign-modal-title">Assign task</h3>
+        <form id="assign-form">
+          <input type="hidden" id="assign-task-id" />
+          <label class="field">
+            <span>Assign to</span>
+            <select id="assign-doer-select" required></select>
+          </label>
+          <label class="field">
+            <span>Comments</span>
+            <textarea id="assign-comments" placeholder="Add any context for the doer…"></textarea>
+          </label>
+          <label class="field">
+            <span>Priority</span>
+            <select id="assign-priority">
+              <option value="Critical">Critical</option>
+              <option value="High">High</option>
+              <option value="Medium" selected>Medium</option>
+              <option value="Low">Low</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Due date</span>
+            <input type="date" id="assign-due-date" />
+          </label>
+          <p class="form-status" id="assign-status"></p>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" type="button" id="assign-cancel">Cancel</button>
+            <button class="btn btn-primary" type="submit">Assign</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="revise-modal" hidden>
+      <div class="modal-card">
+        <h3 class="modal-title">Give extra time</h3>
+        <form id="revise-form">
+          <input type="hidden" id="revise-task-id" />
+          <label class="field">
+            <span>New date</span>
+            <input type="date" id="revise-date" required />
+          </label>
+          <p class="form-status" id="revise-status"></p>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" type="button" id="revise-cancel">Cancel</button>
+            <button class="btn btn-primary" type="submit">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="/static/api.js"></script>
+    <script src="/static/pagination.js"></script>
+    <script src="/static/sidebar.js"></script>
+    <script src="/static/department-tasks.js"></script>
+  </body>
+</html>

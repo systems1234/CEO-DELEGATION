@@ -16,14 +16,14 @@ class Settings(BaseSettings):
     case_sensitive=False,
   )
 
-  openai_api_key: str = Field(alias="OPENAI_API_KEY")
+  openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
   openai_model: str = Field(default="gpt-4o", alias="OPENAI_MODEL")
   openai_api_url: str = Field(
     default="https://api.openai.com/v1/chat/completions",
     alias="OPENAI_API_URL",
   )
 
-  ceo_wa_number: str = Field(alias="CEO_WA_NUMBER")
+  ceo_wa_number: str = Field(default="", alias="CEO_WA_NUMBER")
   wa_provider: Literal["meta", "greenapi"] = Field(default="meta", alias="WA_PROVIDER")
 
   wa_access_token: str | None = Field(default=None, alias="WA_ACCESS_TOKEN")
@@ -42,6 +42,10 @@ class Settings(BaseSettings):
   google_service_account_json: str | None = Field(default=None, alias="GOOGLE_SERVICE_ACCOUNT_JSON")
   google_application_credentials: str | None = Field(default=None, alias="GOOGLE_APPLICATION_CREDENTIALS")
 
+  hr_dataset: str = Field(default="gempundit_db", alias="HR_DATASET")
+  hr_employee_table: str = Field(default="employee", alias="HR_EMPLOYEE_TABLE")
+  sso_project_tag: str = Field(default="ceo_del_sys", alias="SSO_PROJECT_TAG")
+
   script_timezone: str = Field(default="Asia/Kolkata", alias="SCRIPT_TIMEZONE")
   http_timeout_seconds: float = Field(default=20.0, alias="HTTP_TIMEOUT_SECONDS")
 
@@ -57,31 +61,12 @@ class Settings(BaseSettings):
 
   @model_validator(mode="after")
   def validate_required_fields(self) -> "Settings":
-    if self.wa_provider == "meta":
-      missing = [
-        key
-        for key, value in {
-          "WA_ACCESS_TOKEN": self.wa_access_token,
-          "WA_PHONE_NUMBER_ID": self.wa_phone_number_id,
-          "WA_VERIFY_TOKEN": self.wa_verify_token,
-        }.items()
-        if not value
-      ]
-      if missing:
-        raise ConfigurationError(f"Missing Meta configuration: {', '.join(missing)}")
-
-    if self.wa_provider == "greenapi":
-      missing = [
-        key
-        for key, value in {
-          "GREEN_API_URL": self.green_api_url,
-          "GREEN_API_INSTANCE_ID": self.green_api_instance_id,
-          "GREEN_API_TOKEN": self.green_api_token,
-        }.items()
-        if not value
-      ]
-      if missing:
-        raise ConfigurationError(f"Missing Green API configuration: {', '.join(missing)}")
+    # WhatsApp (Meta/Green API) and OpenAI credentials are intentionally NOT
+    # required here: the department-task dashboard flow (All_Tasks ->
+    # Department_Tasks -> doer_Tasks/doer_Task_update) runs entirely without
+    # them. The WhatsApp gateway and parser are still constructed, but any
+    # attempt to actually send a message will fail at call time (caught and
+    # logged, never crashes the app) until real credentials are added.
 
     if not self.google_service_account_json and not self.google_application_credentials:
       raise ConfigurationError(
@@ -100,9 +85,8 @@ class Settings(BaseSettings):
       ]
       if missing:
         raise ConfigurationError(f"Missing SSO configuration: {', '.join(missing)}")
-      if not self.allowed_google_domain and not self.allowed_google_emails:
-        raise ConfigurationError(
-          "Set ALLOWED_GOOGLE_DOMAIN (e.g. gempundit.com) or ALLOWED_GOOGLE_EMAILS to restrict dashboard login."
-        )
+      # Login is gated by the HR employee table (Project_id contains sso_project_tag),
+      # not by ALLOWED_GOOGLE_DOMAIN/ALLOWED_GOOGLE_EMAILS. Those fields are kept only
+      # as an optional manual override and are no longer required.
 
     return self

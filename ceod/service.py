@@ -6,22 +6,35 @@ from datetime import date, timedelta
 from typing import Protocol
 
 from ceod.models import (
+  AllTask,
   DailyCompletionPoint,
   DashboardSnapshot,
   DashboardStats,
   DateGroup,
+  DepartmentQueueItem,
+  DepartmentTaskAssignment,
+  DoerTaskCompletion,
+  DoerTaskUpdateEntry,
+  DoerTaskView,
+  DOER_UPDATE_STATUSES,
+  EmployeeRecord,
   IncomingMessage,
   KpiReport,
+  LoginResult,
   MemberKpi,
   PRIORITY_RANK,
   ParsedPostponeReply,
   ParsedTaskAssignment,
+  ReportingRelation,
   SeedProfile,
   TaskPriority,
   TaskRecord,
+  TaskRevision,
   TaskStatus,
   TeamMember,
   TriageView,
+  UserAccount,
+  UserRole,
 )
 from ceod.utils import extract_row_id, format_date_for_display, is_done_reply, is_postpone_reply, normalise_whatsapp_number, timezone_now, today_iso
 
@@ -687,3 +700,289 @@ class TaskDelegationService:
         ),
         name=task.assignee_name,
       )
+
+
+class DepartmentRepositoryProtocol(Protocol):
+  def get_employee_by_email(self, email: str) -> EmployeeRecord | None: ...
+  def get_user(self, email: str) -> UserAccount | None: ...
+  def list_users(self) -> list[UserAccount]: ...
+  def upsert_user(self, *, user_id: str, name: str, role: UserRole, active: bool = True) -> UserAccount: ...
+  def deactivate_user(self, email: str) -> None: ...
+  def list_reporting_relations(self) -> list[ReportingRelation]: ...
+  def get_team_for(self, name: str) -> list[ReportingRelation]: ...
+  def add_reporting_relation(
+    self, *, tl_name: str | None, manager_name: str | None, emp_name: str, emp_id: str
+  ) -> ReportingRelation: ...
+  def list_all_tasks(self) -> list[AllTask]: ...
+  def list_all_tasks_for_department(self, department: str) -> list[AllTask]: ...
+  def get_all_task(self, task_id: str) -> AllTask | None: ...
+  def get_current_department_assignment(self, task_id: str) -> DepartmentTaskAssignment | None: ...
+  def list_current_department_assignments(self) -> dict[str, DepartmentTaskAssignment]: ...
+  def list_current_department_assignments_for_department(self, department: str) -> dict[str, DepartmentTaskAssignment]: ...
+  def list_current_assignments_for_doer(self, doer_email: str) -> list[DepartmentTaskAssignment]: ...
+  def assign_department_task(
+    self,
+    *,
+    task_id: str,
+    task_brief: str,
+    comments: str | None,
+    department_due_date: str | None,
+    priority: TaskPriority,
+    assigned_by: str,
+    assigned_to_doer: str,
+  ) -> DepartmentTaskAssignment: ...
+  def revise_due_date(self, *, task_id: str, revised_date: str, revised_by: str) -> TaskRevision: ...
+  def list_revisions_for_task(self, task_id: str) -> list[TaskRevision]: ...
+  def list_revisions_for_tasks(self, task_ids: list[str]) -> dict[str, list[TaskRevision]]: ...
+  def mark_doer_task_complete(
+    self,
+    *,
+    task_id: str,
+    doer_task_id: str,
+    task_brief: str,
+    assigned_by: str,
+    submitted_by: str,
+    comments: str | None,
+    completion_date: str,
+  ) -> DoerTaskCompletion: ...
+  def get_completion_for_doer_task(self, doer_task_id: str) -> DoerTaskCompletion | None: ...
+  def get_completions_for_doer_tasks(self, doer_task_ids: list[str]) -> dict[str, DoerTaskCompletion]: ...
+  def add_doer_task_update(
+    self, *, task_id: str, doer_task_id: str, task_update: str, comments: str | None, submitted_by: str
+  ) -> DoerTaskUpdateEntry: ...
+  def get_latest_updates_for_doer_tasks(self, doer_task_ids: list[str]) -> dict[str, DoerTaskUpdateEntry]: ...
+
+
+class DepartmentTaskService:
+  """Business logic for the department-task delegation flow (v2).
+
+  Kept separate from TaskDelegationService: that class still drives the
+  WhatsApp/LLM-assignment pipeline (dormant until WA/OpenAI creds land), while
+  this one owns the All_Tasks -> Department_Tasks -> doer_Tasks/doer_Task_update
+  flow that the web dashboard now runs on.
+  """
+
+  def __init__(self, *, repository: DepartmentRepositoryProtocol, timezone_name: str) -> None:
+    self._repository = repository
+    self._timezone_name = timezone_name
+    self._logger = logging.getLogger(__name__)
+
+  # -- login -------------------------------------------------------------
+
+  def resolve_login(self, email: str) -> LoginResult | None:
+    clean_email = email.strip().lower()
+    employee = self._repository.get_employee_by_email(clean_email)
+    if employee is None:
+      return None
+    account = self._repository.get_user(clean_email)
+    role = account.role if (account and account.active) else UserRole.MEMBER
+    name = account.name if account else employee.full_name
+    return LoginResult(email=clean_email, name=name, role=role, department=employee.department)
+
+  # -- department queue (TL / Manager / Senior / Admin) --------------------
+
+  def get_department_queue(self, login: LoginResult) -> list[DepartmentQueueItem]:
+    if login.role == UserRole.ADMIN:
+      tasks = self._repository.list_all_tasks()
+      current_by_task = self._repository.list_current_department_assignments()
+    else:
+      department = login.department or ""
+      tasks = self._repository.list_all_tasks_for_department(department)
+      current_by_task = self._repository.list_current_department_assignments_for_department(department)
+
+    revisions_by_task = self._repository.list_revisions_for_tasks(list(current_by_task.keys()))
+    doer_task_ids = [a.doer_task_id for a in current_by_task.values()]
+    completions = self._repository.get_completions_for_doer_tasks(doer_task_ids)
+    latest_updates = self._repository.get_latest_updates_for_doer_tasks(doer_task_ids)
+
+    items: list[DepartmentQueueItem] = []
+    for task in tasks:
+      assignment = current_by_task.get(task.task_id)
+      items.append(
+        DepartmentQueueItem(
+          task=task,
+          current_assignment=assignment,
+          revisions=revisions_by_task.get(task.task_id, []),
+          completion=completions.get(assignment.doer_task_id) if assignment else None,
+          latest_update=latest_updates.get(assignment.doer_task_id) if assignment else None,
+        )
+      )
+    return items
+
+  def get_team(self, login: LoginResult) -> list[ReportingRelation]:
+    return self._repository.get_team_for(login.name)
+
+  def assign_task(
+    self,
+    *,
+    login: LoginResult,
+    task_id: str,
+    assigned_to_doer: str,
+    comments: str,
+    due_date: str | None,
+    priority: TaskPriority,
+  ) -> DepartmentTaskAssignment:
+    if not login.is_management:
+      raise ValueError("Only TL, Manager, Senior, or Admin can assign tasks")
+
+    task = self._repository.get_all_task(task_id)
+    if task is None:
+      raise ValueError(f"Task {task_id} not found")
+
+    clean_doer = assigned_to_doer.strip().lower()
+    if not clean_doer:
+      raise ValueError("Doer is required")
+    if login.role != UserRole.ADMIN:
+      team = {member.emp_id.strip().lower() for member in self.get_team(login)}
+      if clean_doer not in team:
+        raise ValueError(f'"{assigned_to_doer}" is not on your team')
+
+    if due_date:
+      try:
+        date.fromisoformat(due_date)
+      except ValueError as exc:
+        raise ValueError("Due date must be in YYYY-MM-DD format") from exc
+
+    assignment = self._repository.assign_department_task(
+      task_id=task_id,
+      task_brief=task.task_brief,
+      comments=comments.strip() or None,
+      department_due_date=due_date,
+      priority=priority,
+      assigned_by=login.email,
+      assigned_to_doer=clean_doer,
+    )
+    self._logger.info("Assigned task=%s doer=%s by=%s", task_id, clean_doer, login.email)
+    return assignment
+
+  def revise_due_date(self, *, login: LoginResult, task_id: str, revised_date: str) -> TaskRevision:
+    if not login.is_management:
+      raise ValueError("Only TL, Manager, Senior, or Admin can revise due dates")
+    assignment = self._repository.get_current_department_assignment(task_id)
+    if assignment is None:
+      raise ValueError(f"Task {task_id} has not been assigned yet")
+    try:
+      date.fromisoformat(revised_date)
+    except ValueError as exc:
+      raise ValueError("Revised date must be in YYYY-MM-DD format") from exc
+    revision = self._repository.revise_due_date(task_id=task_id, revised_date=revised_date, revised_by=login.email)
+    self._logger.info("Revised due date task=%s new_date=%s by=%s", task_id, revised_date, login.email)
+    return revision
+
+  # -- doer view (Member) --------------------------------------------------
+
+  def get_my_doer_view(self, login: LoginResult) -> list[DoerTaskView]:
+    assignments = self._repository.list_current_assignments_for_doer(login.email)
+    if not assignments:
+      return []
+
+    task_ids = [a.task_id for a in assignments]
+    doer_task_ids = [a.doer_task_id for a in assignments]
+    all_tasks = {a.task_id: self._repository.get_all_task(a.task_id) for a in assignments}
+    completions = self._repository.get_completions_for_doer_tasks(doer_task_ids)
+    latest_updates = self._repository.get_latest_updates_for_doer_tasks(doer_task_ids)
+    revisions_by_task = self._repository.list_revisions_for_tasks(task_ids)
+
+    views: list[DoerTaskView] = []
+    for assignment in assignments:
+      all_task = all_tasks.get(assignment.task_id)
+      if all_task is None:
+        continue
+      views.append(
+        DoerTaskView(
+          assignment=assignment,
+          all_task=all_task,
+          latest_update=latest_updates.get(assignment.doer_task_id),
+          completion=completions.get(assignment.doer_task_id),
+          revisions=revisions_by_task.get(assignment.task_id, []),
+        )
+      )
+    return views
+
+  def submit_completion(
+    self, *, login: LoginResult, task_id: str, doer_task_id: str, comments: str = ""
+  ) -> DoerTaskCompletion:
+    assignment = self._repository.get_current_department_assignment(task_id)
+    if assignment is None or assignment.doer_task_id != doer_task_id:
+      raise ValueError("This task assignment is no longer active")
+    if assignment.assigned_to_doer != login.email:
+      raise ValueError("You can only complete your own tasks")
+    if self._repository.get_completion_for_doer_task(doer_task_id) is not None:
+      raise ValueError("This task is already marked complete")
+
+    completion = self._repository.mark_doer_task_complete(
+      task_id=task_id,
+      doer_task_id=doer_task_id,
+      task_brief=assignment.task_brief,
+      assigned_by=assignment.assigned_by,
+      submitted_by=login.email,
+      comments=comments.strip() or None,
+      completion_date=today_iso(self._timezone_name),
+    )
+    self._logger.info("Doer task completed task=%s doer_task_id=%s by=%s", task_id, doer_task_id, login.email)
+    return completion
+
+  def submit_update(
+    self,
+    *,
+    login: LoginResult,
+    task_id: str,
+    doer_task_id: str,
+    task_update: str,
+    comments: str = "",
+  ) -> DoerTaskUpdateEntry:
+    if task_update not in DOER_UPDATE_STATUSES:
+      raise ValueError(f'Update must be one of: {", ".join(DOER_UPDATE_STATUSES)}')
+    assignment = self._repository.get_current_department_assignment(task_id)
+    if assignment is None or assignment.doer_task_id != doer_task_id:
+      raise ValueError("This task assignment is no longer active")
+    if login.email not in (assignment.assigned_to_doer, assignment.assigned_by):
+      raise ValueError("Only the assigned doer or their TL/Manager can post an update")
+
+    entry = self._repository.add_doer_task_update(
+      task_id=task_id,
+      doer_task_id=doer_task_id,
+      task_update=task_update,
+      comments=comments.strip() or None,
+      submitted_by=login.email,
+    )
+    self._logger.info("Doer task update task=%s doer_task_id=%s status=%s by=%s", task_id, doer_task_id, task_update, login.email)
+    return entry
+
+  # -- admin --------------------------------------------------------------
+
+  def list_users(self) -> list[UserAccount]:
+    return self._repository.list_users()
+
+  def upsert_user(self, *, user_id: str, name: str, role: UserRole, active: bool = True) -> UserAccount:
+    clean_email = user_id.strip().lower()
+    clean_name = name.strip()
+    if not clean_email or "@" not in clean_email:
+      raise ValueError("A valid work email is required")
+    if not clean_name:
+      raise ValueError("Name is required")
+    return self._repository.upsert_user(user_id=clean_email, name=clean_name, role=role, active=active)
+
+  def deactivate_user(self, user_id: str) -> None:
+    self._repository.deactivate_user(user_id.strip().lower())
+
+  def list_reporting_relations(self) -> list[ReportingRelation]:
+    return self._repository.list_reporting_relations()
+
+  def add_reporting_relation(
+    self, *, tl_name: str | None, manager_name: str | None, emp_name: str, emp_id: str
+  ) -> ReportingRelation:
+    clean_emp_name = emp_name.strip()
+    clean_emp_id = emp_id.strip()
+    if not clean_emp_name:
+      raise ValueError("Employee name is required")
+    if not clean_emp_id:
+      raise ValueError("Employee email/id is required")
+    if not (tl_name or "").strip() and not (manager_name or "").strip():
+      raise ValueError("At least a TL or a Manager must be set")
+    return self._repository.add_reporting_relation(
+      tl_name=(tl_name or "").strip() or None,
+      manager_name=(manager_name or "").strip() or None,
+      emp_name=clean_emp_name,
+      emp_id=clean_emp_id.lower(),
+    )

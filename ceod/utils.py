@@ -76,6 +76,10 @@ def generate_row_id() -> str:
   return f"T{int(time.time() * 1000)}{random.randint(0, 65535):04X}"
 
 
+def generate_prefixed_id(prefix: str) -> str:
+  return f"{prefix}{int(time.time() * 1000)}{random.randint(0, 65535):04X}"
+
+
 def build_random_seed_profiles(
   count: int,
   existing_names: set[str],
