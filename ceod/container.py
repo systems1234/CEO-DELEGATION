@@ -27,7 +27,8 @@ class AppContainer:
 def build_container(settings: Settings | None = None) -> AppContainer:
   resolved_settings = settings or Settings()
   repository = GoogleBigQueryRepository(resolved_settings)
-  repository.ensure_schema()
+  if resolved_settings.run_schema_migrations:
+    repository.ensure_schema()
   parser = OpenAIMessageParser(resolved_settings)
   whatsapp = build_whatsapp_gateway(resolved_settings)
   service = TaskDelegationService(

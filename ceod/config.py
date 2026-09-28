@@ -46,6 +46,13 @@ class Settings(BaseSettings):
   hr_employee_table: str = Field(default="employee", alias="HR_EMPLOYEE_TABLE")
   sso_project_tag: str = Field(default="ceo_del_sys", alias="SSO_PROJECT_TAG")
 
+  # Off by default: on serverless, running every CREATE/ALTER statement in
+  # schema.sql on each cold start is slow enough (BigQuery job submit + poll
+  # per statement) to risk hitting the function timeout, and it's a no-op
+  # once the schema already exists. Apply schema changes out-of-band instead
+  # (locally, or by flipping this on for one deploy) rather than on every request.
+  run_schema_migrations: bool = Field(default=False, alias="RUN_SCHEMA_MIGRATIONS")
+
   script_timezone: str = Field(default="Asia/Kolkata", alias="SCRIPT_TIMEZONE")
   http_timeout_seconds: float = Field(default=20.0, alias="HTTP_TIMEOUT_SECONDS")
 
