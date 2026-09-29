@@ -105,19 +105,15 @@ button {
   flex-shrink: 0;
 }
 
-.brand-name {
-  font-weight: 700;
-  font-size: 0.98rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.sidebar.is-collapsed .brand-name,
 .sidebar.is-collapsed .nav-label,
 .sidebar.is-collapsed .nav-text,
 .sidebar.is-collapsed .user-meta {
   display: none;
+}
+
+.sidebar.is-collapsed .sidebar-brand {
+  flex-direction: column;
+  gap: 10px;
 }
 
 .sidebar-toggle {
@@ -279,9 +275,14 @@ button {
 
 .stat-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 14px;
-  margin-bottom: 22px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+  padding: 8px 0;
 }
 
 .stat-card {
@@ -289,7 +290,7 @@ button {
   border: 1px solid var(--line);
   border-top: 3px solid var(--accent);
   border-radius: var(--radius-md);
-  padding: 16px 18px;
+  padding: 10px 14px;
   box-shadow: var(--shadow-sm);
 }
 
@@ -298,8 +299,8 @@ button {
 .stat-card.is-info { border-top-color: var(--info); }
 
 .stat-label {
-  margin: 0 0 6px;
-  font-size: 0.72rem;
+  margin: 0 0 4px;
+  font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -307,7 +308,7 @@ button {
 }
 
 .stat-value {
-  font-size: 1.7rem;
+  font-size: 1.25rem;
   font-weight: 800;
 }
 

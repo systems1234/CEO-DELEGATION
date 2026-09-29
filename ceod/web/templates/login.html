@@ -21,91 +21,83 @@
         justify-content: center;
         font-family: "Hanken Grotesk", sans-serif;
         color: #171411;
-        background:
-          radial-gradient(circle at top left, rgba(47,111,102,0.12), transparent 28%),
-          radial-gradient(circle at bottom right, rgba(176,132,47,0.10), transparent 26%),
-          linear-gradient(180deg, #f7f4ef 0%, #f1ece5 100%);
+        background: #f4f5f7;
       }
 
       .login-card {
-        width: min(420px, calc(100vw - 32px));
-        padding: 40px 36px;
-        background: rgba(255,255,255,0.92);
-        border: 1px solid rgba(24,21,18,0.11);
-        border-radius: 28px;
-        box-shadow: 0 24px 72px rgba(24,21,18,0.09);
-        -webkit-backdrop-filter: blur(18px);
-        backdrop-filter: blur(18px);
+        width: min(360px, calc(100vw - 32px));
+        padding: 24px;
+        background: #fff;
+        border: 1px solid rgba(23, 26, 31, 0.09);
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(23, 26, 31, 0.08);
       }
 
-      .login-eyebrow {
-        margin: 0 0 6px;
-        font-size: 0.74rem;
-        font-weight: 700;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-        color: #b0842f;
+      .login-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .login-mark {
+        width: 40px;
+        height: 40px;
+        flex-shrink: 0;
+        border-radius: 10px;
+        background: #2f6f66;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        font-size: 1.05rem;
+      }
+
+      .login-header-text {
+        min-width: 0;
       }
 
       .login-title {
-        margin: 0 0 6px;
-        font-family: "Hanken Grotesk", sans-serif;
-        font-size: 1.8rem;
-        font-weight: 800;
-        letter-spacing: -0.03em;
+        margin: 0;
+        font-size: 0.98rem;
+        font-weight: 700;
         color: #171411;
       }
 
-      .login-sub {
-        margin: 0 0 28px;
-        font-size: 0.88rem;
-        color: #615950;
-        line-height: 1.5;
-      }
-
-      .field {
-        display: grid;
-        gap: 6px;
-        margin-bottom: 14px;
-      }
-
-      .field span {
+      .login-subtitle {
+        margin: 2px 0 0;
         font-size: 0.82rem;
-        font-weight: 600;
-        color: #615950;
+        color: #6b7280;
       }
 
-      .field input {
-        width: 100%;
-        padding: 11px 14px;
-        font: inherit;
-        font-size: 0.92rem;
-        background: #f7f4ef;
-        border: 1px solid rgba(24,21,18,0.14);
-        border-radius: 12px;
-        outline: none;
-        color: #171411;
-        transition: border-color 0.15s;
+      .login-divider {
+        border: none;
+        border-top: 1px solid rgba(23, 26, 31, 0.09);
+        margin: 18px 0;
       }
 
-      .field input:focus {
-        border-color: #2f6f66;
-        background: #fff;
+      .login-error {
+        margin: 0 0 14px;
+        padding: 10px 12px;
+        background: rgba(179, 55, 42, 0.08);
+        border: 1px solid rgba(179, 55, 42, 0.18);
+        border-radius: 10px;
+        font-size: 0.84rem;
+        color: #a5372b;
       }
 
       .login-btn {
         width: 100%;
-        margin-top: 8px;
-        padding: 13px;
+        padding: 11px;
         font: inherit;
-        font-size: 0.92rem;
+        font-size: 0.9rem;
         font-weight: 600;
-        background: #2f6f66;
-        color: #fff;
-        border: none;
-        border-radius: 999px;
+        background: #fff;
+        color: #171411;
+        border: 1px solid rgba(23, 26, 31, 0.14);
+        border-radius: 10px;
         cursor: pointer;
-        transition: background 0.15s, transform 0.12s;
+        transition: background 0.15s, border-color 0.15s;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -113,43 +105,47 @@
         text-decoration: none;
       }
 
-      .login-btn:hover { background: #234c46; transform: translateY(-1px); }
-      .login-btn:active { transform: none; }
+      .login-btn:hover {
+        background: #f7f8fa;
+        border-color: rgba(23, 26, 31, 0.22);
+      }
 
       .login-btn svg { flex-shrink: 0; }
 
-      .login-error {
+      .login-helper {
         margin: 14px 0 0;
-        padding: 11px 14px;
-        background: rgba(165,55,43,0.08);
-        border: 1px solid rgba(165,55,43,0.18);
-        border-radius: 10px;
-        font-size: 0.84rem;
-        color: #a5372b;
-        display: none;
+        font-size: 0.78rem;
+        color: #9aa1ac;
+        text-align: center;
       }
-
-      .login-error.is-visible { display: block; }
     </style>
   </head>
   <body>
     <div class="login-card">
-      <p class="login-eyebrow">CEO Mission Control</p>
-      <h1 class="login-title">Sign in</h1>
-      <p class="login-sub">Sign in with your company Google account to access the dashboard.</p>
+      <div class="login-header">
+        <div class="login-mark">C</div>
+        <div class="login-header-text">
+          <p class="login-title">CEO Mission Control</p>
+          <p class="login-subtitle">Task delegation dashboard</p>
+        </div>
+      </div>
+      <hr class="login-divider" />
+
+      {% if error %}
+      <p class="login-error">{{ error }}</p>
+      {% endif %}
 
       <a class="login-btn" href="/auth/login?next={{ next }}">
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-          <path fill="#fff" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.88 2.7-6.62z"/>
-          <path fill="#fff" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.83.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.94v2.33A9 9 0 0 0 9 18z"/>
-          <path fill="#fff" d="M3.95 10.7A5.4 5.4 0 0 1 3.67 9c0-.59.1-1.17.28-1.7V4.97H.94A9 9 0 0 0 0 9c0 1.45.35 2.83.94 4.03l3.01-2.33z"/>
-          <path fill="#fff" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .94 4.97l3.01 2.33C4.66 5.17 6.65 3.58 9 3.58z"/>
+          <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.72v2.26h2.9c1.7-1.57 2.68-3.88 2.68-6.62z"/>
+          <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.83.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.96v2.34C2.44 15.98 5.48 18 9 18z"/>
+          <path fill="#FBBC05" d="M3.95 10.7c-.18-.54-.28-1.12-.28-1.7s.1-1.16.28-1.7V4.96H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.04l2.99-2.34z"/>
+          <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.96l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/>
         </svg>
         Continue with Google
       </a>
-      {% if error %}
-      <p class="login-error is-visible">{{ error }}</p>
-      {% endif %}
+
+      <p class="login-helper">Access is limited to accounts your admin has registered.</p>
     </div>
   </body>
 </html>
