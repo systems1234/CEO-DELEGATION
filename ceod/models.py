@@ -196,6 +196,7 @@ class AllTask:
   assigned_department: str
   ceo_task_due_date: str | None
   priority: TaskPriority
+  ny_task_id: str | None
 
 
 @dataclass(frozen=True)

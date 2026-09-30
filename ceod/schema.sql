@@ -62,8 +62,14 @@ CREATE TABLE IF NOT EXISTS `{project}.{dataset}.All_Tasks` (
   Task_brief STRING NOT NULL,
   Assigned_Department STRING NOT NULL,
   CEO_Task_due_date DATE,
-  Priority STRING
+  Priority STRING,
+  NY_Task_ID STRING
 );
+
+-- NY_Task_ID is the CEO's own reference number for a task, kept separate from
+-- Task_id (our system id) so CEO-assigned tasks stay traceable against his
+-- own tracking. Not every task has one.
+ALTER TABLE `{project}.{dataset}.All_Tasks` ADD COLUMN IF NOT EXISTS NY_Task_ID STRING;
 
 CREATE TABLE IF NOT EXISTS `{project}.{dataset}.Department_Tasks` (
   Task_id STRING NOT NULL,

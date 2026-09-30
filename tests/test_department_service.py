@@ -222,6 +222,7 @@ def make_task(task_id="TASK1", department="Sales", priority=TaskPriority.MEDIUM)
     assigned_department=department,
     ceo_task_due_date="2026-01-10",
     priority=priority,
+    ny_task_id=None,
   )
 
 

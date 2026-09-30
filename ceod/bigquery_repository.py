@@ -626,7 +626,7 @@ class GoogleBigQueryRepository:
     )
     rows = self._client.query(
       f"""
-      SELECT Task_id, Created_date_time, Task_brief, Assigned_Department, CEO_Task_due_date, Priority
+      SELECT Task_id, Created_date_time, Task_brief, Assigned_Department, CEO_Task_due_date, Priority, NY_Task_ID
       FROM `{self._table('All_Tasks')}`
       WHERE Assigned_Department = @department
       ORDER BY Created_date_time DESC
@@ -638,7 +638,7 @@ class GoogleBigQueryRepository:
   def list_all_tasks(self) -> list[AllTask]:
     rows = self._client.query(
       f"""
-      SELECT Task_id, Created_date_time, Task_brief, Assigned_Department, CEO_Task_due_date, Priority
+      SELECT Task_id, Created_date_time, Task_brief, Assigned_Department, CEO_Task_due_date, Priority, NY_Task_ID
       FROM `{self._table('All_Tasks')}`
       ORDER BY Created_date_time DESC
       """
@@ -652,7 +652,7 @@ class GoogleBigQueryRepository:
     rows = list(
       self._client.query(
         f"""
-        SELECT Task_id, Created_date_time, Task_brief, Assigned_Department, CEO_Task_due_date, Priority
+        SELECT Task_id, Created_date_time, Task_brief, Assigned_Department, CEO_Task_due_date, Priority, NY_Task_ID
         FROM `{self._table('All_Tasks')}` WHERE Task_id = @task_id LIMIT 1
         """,
         job_config=job_config,
@@ -1002,6 +1002,7 @@ class GoogleBigQueryRepository:
       assigned_department=row.Assigned_Department,
       ceo_task_due_date=_to_date_str(row.CEO_Task_due_date),
       priority=self._task_priority(row.Priority),
+      ny_task_id=row.NY_Task_ID,
     )
 
   def _department_assignment_from_row(self, row: bigquery.table.Row) -> DepartmentTaskAssignment:
